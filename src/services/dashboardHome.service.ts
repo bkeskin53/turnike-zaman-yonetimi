@@ -1,6 +1,7 @@
 import { DateTime } from "luxon";
 import { prisma } from "@/src/repositories/prisma";
 import { getCompanyBundle, getActiveCompanyId } from "@/src/services/company.service";
+import { getDashboardActionItems } from "@/src/services/dashboardActions.service";
 
 export async function getDashboardHomeData() {
   const companyId = await getActiveCompanyId();
@@ -35,9 +36,19 @@ export async function getDashboardHomeData() {
     }),
   ]);
 
+  // ✅ Burada "employeeCount hesaplandıktan sonra" dediğim yer tam olarak burası:
+  // Promise.all bitti, employeeCount elimizde. Şimdi workDate'yi oluşturup actions'ı hesaplıyoruz.
+  const workDate = new Date(`${todayLocal}T00:00:00.000Z`);
+
+  const actions = await getDashboardActionItems({
+    companyId,
+    workDate,
+    expectedEmployees: employeeCount,
+    policy,
+  });
+
   // Anomali sayısı: DailyAttendance tablosu doluysa (recompute yaptıysan) çalışır.
   // Dolmuyorsa 0 görünmesi normal (sonra otomatik hale getireceğiz).
-  const workDate = new Date(`${todayLocal}T00:00:00.000Z`);
   let anomalyCount = 0;
   try {
     anomalyCount = await prisma.dailyAttendance.count({
@@ -58,5 +69,6 @@ export async function getDashboardHomeData() {
       anomalyCount,
     },
     recentEvents,
+    actions, // ✅ bunu ekledik
   };
 }

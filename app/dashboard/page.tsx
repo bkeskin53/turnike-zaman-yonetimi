@@ -48,19 +48,45 @@ export default async function DashboardPage() {
         <div className="rounded-2xl border border-zinc-200 bg-white p-4 lg:col-span-1">
           <div className="text-sm font-semibold">Aksiyon Bekleyenler</div>
           <div className="mt-1 text-xs text-zinc-500">
-            İlk %20: placeholder. Sonra tanımsız kart / eksik çıkış / policy ihlalleri buraya düşecek.
+            Bugün için anomali ve operasyon aksiyonları (Daily hesaplamasına dayanır).
           </div>
 
+          {data.actions.coverage.needsRecompute ? (
+            <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-sm">
+              <div className="font-medium">Günlük hesaplama eksik</div>
+              <div className="mt-1 text-xs text-zinc-600">
+                Computed: {data.actions.coverage.computedRows}/{data.actions.coverage.expectedEmployees}. Daily sayfasından{" "}
+                <span className="font-medium">Recompute</span> çalıştır.
+              </div>
+              <a className="mt-2 inline-block text-xs underline" href="/reports/daily">
+                Daily Rapor’a Git
+              </a>
+            </div>
+          ) : null}
+
           <div className="mt-4 grid gap-2">
-            <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-sm">
-              Tanımsız kart okutma: <span className="font-semibold">yakında</span>
-            </div>
-            <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-sm">
-              Eksik çıkış (açık gün): <span className="font-semibold">yakında</span>
-            </div>
-            <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-sm">
-              Policy çakışması: <span className="font-semibold">yakında</span>
-            </div>
+            {data.actions.items.slice(0, 6).map((it: any) => (
+              <div key={it.key} className="rounded-xl border border-zinc-200 bg-white p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium">{it.title}</div>
+                    <div className="text-xs text-zinc-500">{it.description}</div>
+                  </div>
+                  <div className="flex flex-col items-end gap-2">
+                    <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs font-semibold">
+                      {it.count}
+                    </span>
+                    <a className="text-xs underline text-zinc-700" href={it.href}>
+                      Aç
+                    </a>
+                  </div>
+                </div>
+
+                {it.samples?.length ? (
+                  <div className="mt-2 text-xs text-zinc-600">Örnek: {it.samples.join(" · ")}</div>
+                ) : null}
+              </div>
+            ))}
           </div>
         </div>
 
