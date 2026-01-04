@@ -1,0 +1,189 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  ADMIN
+  HR
+  USER
+}
+
+enum OffDayEntryBehavior {
+  IGNORE
+  FLAG
+  COUNT_AS_OT
+}
+
+enum EventDirection {
+  IN
+  OUT
+}
+
+enum EventSource {
+  MANUAL
+  DEVICE
+}
+
+enum NormalizedStatus {
+  PENDING
+  PROCESSED
+  REJECTED
+}
+
+enum DailyStatus {
+  PRESENT
+  ABSENT
+  OFF
+}
+
+model SystemSetting {
+  key       String   @id @db.VarChar(64)
+  value     String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique @db.VarChar(320)
+  passwordHash  String    @db.VarChar(255)
+  role          UserRole  @default(USER)
+  isActive      Boolean   @default(true)
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([role])
+  @@index([isActive])
+}
+
+model Company {
+  id        String        @id @default(cuid())
+  name      String        @db.VarChar(200)
+
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  policy    CompanyPolicy?
+  employees Employee[]
+  rawEvents RawEvent[]
+  normalizedEvents NormalizedEvent[]
+  dailyAttendances DailyAttendance[]
+}
+
+model CompanyPolicy {
+  id                     String   @id @default(cuid())
+  companyId              String   @unique
+
+  timezone               String   @default("Europe/Istanbul") @db.VarChar(64)
+  shiftStartMinute       Int      @default(540)
+  shiftEndMinute         Int      @default(1080)
+  breakMinutes           Int      @default(60)
+  lateGraceMinutes       Int      @default(5)
+  earlyLeaveGraceMinutes Int      @default(5)
+
+  breakAutoDeductEnabled Boolean             @default(true)
+  offDayEntryBehavior    OffDayEntryBehavior @default(IGNORE)
+  overtimeEnabled        Boolean             @default(false)
+
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  company                Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+model Employee {
+  id           String   @id @default(cuid())
+  companyId    String
+
+  employeeCode String   @db.VarChar(50)
+  firstName    String   @db.VarChar(100)
+  lastName     String   @db.VarChar(100)
+  email        String?  @db.VarChar(320)
+
+  isActive     Boolean  @default(true)
+  hiredAt      DateTime?
+  terminatedAt DateTime?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  rawEvents    RawEvent[]
+  normalizedEvents NormalizedEvent[]
+  dailyAttendances DailyAttendance[]
+
+  @@unique([companyId, employeeCode])
+  @@index([companyId])
+  @@index([isActive])
+}
+
+model RawEvent {
+  id         String        @id @default(cuid())
+  companyId  String
+  employeeId String
+
+  occurredAt DateTime
+  direction  EventDirection
+  source     EventSource    @default(MANUAL)
+
+  createdAt  DateTime       @default(now())
+
+  company    Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee   Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  normalized NormalizedEvent?
+
+  @@index([companyId, employeeId, occurredAt])
+}
+
+model NormalizedEvent {
+  id          String           @id @default(cuid())
+  rawEventId  String           @unique
+  companyId   String
+  employeeId  String
+
+  occurredAt  DateTime
+  direction   EventDirection
+  status      NormalizedStatus @default(PENDING)
+  rejectReason String?
+
+  createdAt   DateTime         @default(now())
+
+  rawEvent    RawEvent         @relation(fields: [rawEventId], references: [id], onDelete: Cascade)
+  company     Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee    Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, employeeId, occurredAt])
+  @@index([status])
+}
+
+model DailyAttendance {
+  id               String     @id @default(cuid())
+  companyId         String
+  employeeId        String
+  workDate          DateTime   @db.Date
+
+  firstIn           DateTime?
+  lastOut           DateTime?
+
+  workedMinutes     Int        @default(0)
+  overtimeMinutes   Int        @default(0)
+  lateMinutes       Int        @default(0)
+  earlyLeaveMinutes Int        @default(0)
+
+  status            DailyStatus @default(ABSENT)
+  anomalies         String[]    @default([])
+
+  computedAt        DateTime    @default(now())
+
+  company           Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee          Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, employeeId, workDate])
+  @@index([companyId, workDate])
+  @@index([employeeId, workDate])
+}
