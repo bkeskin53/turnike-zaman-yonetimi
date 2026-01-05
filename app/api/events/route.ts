@@ -10,8 +10,11 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const employeeId = url.searchParams.get("employeeId") ?? undefined;
     const date = url.searchParams.get("date") ?? undefined;
+    const doorId = url.searchParams.get("doorId") ?? undefined;
+    const deviceId = url.searchParams.get("deviceId") ?? undefined;
 
-    const data = await getEvents({ employeeId, date });
+    const data = await getEvents({ employeeId, date, doorId, deviceId });
+
     return NextResponse.json(data);
   } catch (err) {
     return authErrorResponse(err) ?? NextResponse.json({ error: "server_error" }, { status: 500 });

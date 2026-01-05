@@ -40,6 +40,18 @@ enum DailyStatus {
   OFF
 }
 
+enum DoorRole {
+  ACCESS_ONLY
+  TIMEKEEPING
+  BOTH
+}
+
+enum DeviceDriver {
+  ZKTECO_PULL
+  ZKTECO_PUSH
+  GENERIC
+}
+
 model SystemSetting {
   key       String   @id @db.VarChar(64)
   value     String   @db.Text
@@ -48,72 +60,76 @@ model SystemSetting {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique @db.VarChar(320)
-  passwordHash  String    @db.VarChar(255)
-  role          UserRole  @default(USER)
-  isActive      Boolean   @default(true)
+  id           String   @id @default(cuid())
+  email        String   @unique @db.VarChar(320)
+  passwordHash String   @db.VarChar(255)
+  role         UserRole @default(USER)
+  isActive     Boolean  @default(true)
 
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([role])
   @@index([isActive])
 }
 
 model Company {
-  id        String        @id @default(cuid())
-  name      String        @db.VarChar(200)
+  id   String @id @default(cuid())
+  name String @db.VarChar(200)
 
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  policy    CompanyPolicy?
-  employees Employee[]
-  rawEvents RawEvent[]
+  policy           CompanyPolicy?
+  employees        Employee[]
+  rawEvents        RawEvent[]
   normalizedEvents NormalizedEvent[]
   dailyAttendances DailyAttendance[]
+
+  branches Branch[]
+  doors    Door[]
+  devices  Device[]
 }
 
 model CompanyPolicy {
-  id                     String   @id @default(cuid())
-  companyId              String   @unique
+  id        String @id @default(cuid())
+  companyId String @unique
 
-  timezone               String   @default("Europe/Istanbul") @db.VarChar(64)
-  shiftStartMinute       Int      @default(540)
-  shiftEndMinute         Int      @default(1080)
-  breakMinutes           Int      @default(60)
-  lateGraceMinutes       Int      @default(5)
-  earlyLeaveGraceMinutes Int      @default(5)
+  timezone               String @default("Europe/Istanbul") @db.VarChar(64)
+  shiftStartMinute       Int    @default(540)
+  shiftEndMinute         Int    @default(1080)
+  breakMinutes           Int    @default(60)
+  lateGraceMinutes       Int    @default(5)
+  earlyLeaveGraceMinutes Int    @default(5)
 
   breakAutoDeductEnabled Boolean             @default(true)
   offDayEntryBehavior    OffDayEntryBehavior @default(IGNORE)
   overtimeEnabled        Boolean             @default(false)
 
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  company                Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 }
 
 model Employee {
-  id           String   @id @default(cuid())
-  companyId    String
+  id        String @id @default(cuid())
+  companyId String
 
-  employeeCode String   @db.VarChar(50)
-  firstName    String   @db.VarChar(100)
-  lastName     String   @db.VarChar(100)
-  email        String?  @db.VarChar(320)
+  employeeCode String  @db.VarChar(50)
+  firstName    String  @db.VarChar(100)
+  lastName     String  @db.VarChar(100)
+  email        String? @db.VarChar(320)
 
-  isActive     Boolean  @default(true)
+  isActive     Boolean   @default(true)
   hiredAt      DateTime?
   terminatedAt DateTime?
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  rawEvents    RawEvent[]
+  company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  rawEvents        RawEvent[]
   normalizedEvents NormalizedEvent[]
   dailyAttendances DailyAttendance[]
 
@@ -123,67 +139,154 @@ model Employee {
 }
 
 model RawEvent {
-  id         String        @id @default(cuid())
+  id         String @id @default(cuid())
   companyId  String
   employeeId String
+
+  doorId   String?
+  deviceId String?
 
   occurredAt DateTime
   direction  EventDirection
   source     EventSource    @default(MANUAL)
 
-  createdAt  DateTime       @default(now())
+  createdAt DateTime @default(now())
 
-  company    Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  employee   Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  door   Door?   @relation(fields: [doorId], references: [id], onDelete: SetNull)
+  device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
   normalized NormalizedEvent?
 
   @@index([companyId, employeeId, occurredAt])
+  @@index([companyId, doorId, occurredAt])
+  @@index([companyId, deviceId, occurredAt])
 }
 
 model NormalizedEvent {
-  id          String           @id @default(cuid())
-  rawEventId  String           @unique
-  companyId   String
-  employeeId  String
+  id         String @id @default(cuid())
+  rawEventId String @unique
+  companyId  String
+  employeeId String
 
-  occurredAt  DateTime
-  direction   EventDirection
-  status      NormalizedStatus @default(PENDING)
+  occurredAt   DateTime
+  direction    EventDirection
+  status       NormalizedStatus @default(PENDING)
   rejectReason String?
 
-  createdAt   DateTime         @default(now())
+  createdAt DateTime @default(now())
 
-  rawEvent    RawEvent         @relation(fields: [rawEventId], references: [id], onDelete: Cascade)
-  company     Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  employee    Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  rawEvent RawEvent @relation(fields: [rawEventId], references: [id], onDelete: Cascade)
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@index([companyId, employeeId, occurredAt])
   @@index([status])
 }
 
 model DailyAttendance {
-  id               String     @id @default(cuid())
-  companyId         String
-  employeeId        String
-  workDate          DateTime   @db.Date
+  id         String   @id @default(cuid())
+  companyId  String
+  employeeId String
+  workDate   DateTime @db.Date
 
-  firstIn           DateTime?
-  lastOut           DateTime?
+  firstIn DateTime?
+  lastOut DateTime?
 
-  workedMinutes     Int        @default(0)
-  overtimeMinutes   Int        @default(0)
-  lateMinutes       Int        @default(0)
-  earlyLeaveMinutes Int        @default(0)
+  workedMinutes     Int @default(0)
+  overtimeMinutes   Int @default(0)
+  lateMinutes       Int @default(0)
+  earlyLeaveMinutes Int @default(0)
 
-  status            DailyStatus @default(ABSENT)
-  anomalies         String[]    @default([])
+  status    DailyStatus @default(ABSENT)
+  anomalies String[]    @default([])
 
-  computedAt        DateTime    @default(now())
+  computedAt DateTime @default(now())
 
-  company           Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  employee          Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([companyId, employeeId, workDate])
   @@index([companyId, workDate])
   @@index([employeeId, workDate])
+}
+
+model Branch {
+  id        String @id @default(cuid())
+  companyId String
+
+  code     String  @db.VarChar(50)
+  name     String  @db.VarChar(200)
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  doors   Door[]
+  devices Device[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+}
+
+model Door {
+  id        String @id @default(cuid())
+  companyId String
+  branchId  String
+
+  code             String          @db.VarChar(50)
+  name             String          @db.VarChar(200)
+  role             DoorRole        @default(TIMEKEEPING)
+  defaultDirection EventDirection?
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  branch    Branch     @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  devices   Device[]
+  rawEvents RawEvent[]
+
+  @@unique([companyId, code])
+  @@index([companyId, branchId])
+}
+
+model Device {
+  id        String  @id @default(cuid())
+  companyId String
+  branchId  String
+  doorId    String?
+
+  name   String       @db.VarChar(200)
+  vendor String?      @db.VarChar(100)
+  model  String?      @db.VarChar(100)
+  driver DeviceDriver @default(ZKTECO_PULL)
+
+  ip       String? @db.VarChar(64)
+  port     Int?    @default(4370)
+  serialNo String? @db.VarChar(100)
+
+  isActive Boolean @default(true)
+
+  lastSeenAt       DateTime?
+  lastSyncAt       DateTime?
+  lastErrorAt      DateTime?
+  lastErrorMessage String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  branch    Branch     @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  door      Door?      @relation(fields: [doorId], references: [id], onDelete: SetNull)
+  rawEvents RawEvent[]
+
+  @@index([companyId])
+  @@index([doorId])
+  @@index([lastSeenAt])
 }

@@ -37,7 +37,12 @@ export async function addManualEvent(input: {
   return createRawEvent(companyId, { employeeId, direction, occurredAt });
 }
 
-export async function getEvents(filter: { employeeId?: string; date?: string }) {
+export async function getEvents(filter: {
+  employeeId?: string;
+  date?: string;
+  doorId?: string;
+  deviceId?: string;
+}) {
   const companyId = await getActiveCompanyId();
   const items = await listRawEvents(companyId, filter);
   return { items };

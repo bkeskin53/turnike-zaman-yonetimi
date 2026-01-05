@@ -18,13 +18,20 @@ export async function createRawEvent(companyId: string, input: {
   });
 }
 
-export async function listRawEvents(companyId: string, filter: {
-  employeeId?: string;
-  date?: string; // YYYY-MM-DD
-}) {
+export async function listRawEvents(
+  companyId: string,
+  filter: {
+    employeeId?: string;
+    date?: string; // YYYY-MM-DD
+    doorId?: string;
+    deviceId?: string;
+  }
+) {
   const where: any = { companyId };
 
   if (filter.employeeId) where.employeeId = filter.employeeId;
+  if (filter.doorId) where.doorId = filter.doorId;
+  if (filter.deviceId) where.deviceId = filter.deviceId;
 
   if (filter.date) {
     // basit v1: server local gün sınırı
@@ -40,6 +47,12 @@ export async function listRawEvents(companyId: string, filter: {
     include: {
       employee: {
         select: { id: true, employeeCode: true, firstName: true, lastName: true },
+      },
+      door: {
+        select: { id: true, code: true, name: true },
+      },
+      device: {
+        select: { id: true, name: true, ip: true },
       },
     },
   });

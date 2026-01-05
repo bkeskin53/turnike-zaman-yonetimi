@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 const nav = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/policy", label: "Company & Policy" },
+  { href: "/org", label: "Organizasyon" },
   { href: "/employees", label: "Employees" },
   { href: "/events", label: "Events" },
   { href: "/reports/daily", label: "Daily" },

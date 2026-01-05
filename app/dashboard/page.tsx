@@ -36,9 +36,21 @@ export default async function DashboardPage() {
         </div>
 
         <div className="rounded-2xl border border-zinc-200 bg-white p-4">
-          <div className="text-xs text-zinc-500">Anomali</div>
+          <div className="text-xs text-zinc-500">Anomali (Bugün)</div>
           <div className="mt-2 text-2xl font-semibold">{data.kpi.anomalyCount}</div>
-          <div className="mt-2 text-xs text-zinc-500">Daily tablosu doluysa görünür</div>
+
+          <div className="mt-2 text-xs text-zinc-600">
+            Yüksek: <span className="font-semibold">{data.kpi.highAnomalyCount}</span>
+            {" • "}
+            Daily:{" "}
+            <span className="font-semibold">
+              {data.kpi.dailyCoverage.computedRows}/{data.kpi.dailyCoverage.expectedEmployees}
+            </span>
+          </div>
+
+          <div className="mt-1 text-xs text-zinc-500">
+            Son hesap: {fmt(data.kpi.dailyComputedAt ?? null, data.tz)}
+          </div>
         </div>
       </section>
 
@@ -165,11 +177,36 @@ export default async function DashboardPage() {
       <section className="mt-4 rounded-2xl border border-zinc-200 bg-white p-4">
         <div className="text-sm font-semibold">Sistem Sağlığı (IT)</div>
         <div className="mt-1 text-xs text-zinc-500">
-          İlk %20: Cihaz modeli henüz eklenmedi. Cihazlar eklendiğinde burada online/offline, son çekim ve hata
-          sayıları gösterilecek.
+          Cihaz online/offline durumu ve son senkronizasyon bilgisi.
         </div>
-        <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-700">
-          Durum: <span className="font-semibold">Cihaz modülü bekleniyor</span> • Şimdilik veri kaynağı: MANUAL events
+
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+            <div className="text-xs text-zinc-500">Toplam Cihaz</div>
+            <div className="mt-1 text-lg font-semibold">{data.health.deviceTotal}</div>
+          </div>
+
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+            <div className="text-xs text-zinc-500">Online</div>
+            <div className="mt-1 text-lg font-semibold">{data.health.deviceOnline}</div>
+          </div>
+
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+            <div className="text-xs text-zinc-500">Offline</div>
+            <div className="mt-1 text-lg font-semibold">{data.health.deviceOffline}</div>
+            <div className="mt-1 text-[11px] text-zinc-500">
+              Eşik: {data.health.offlineThresholdMinutes} dk
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+            <div className="text-xs text-zinc-500">Son Sync</div>
+            <div className="mt-1 text-sm font-semibold">{fmt(data.health.lastSyncAt ?? null, data.tz)}</div>
+          </div>
+        </div>
+
+        <div className="mt-3 text-xs text-zinc-500">
+          Not: Henüz cihaz eklenmediyse değerlerin 0 görünmesi normaldir.
         </div>
       </section>
     </AppShell>

@@ -36,8 +36,7 @@ export async function getDashboardHomeData() {
     }),
   ]);
 
-  // ✅ Burada "employeeCount hesaplandıktan sonra" dediğim yer tam olarak burası:
-  // Promise.all bitti, employeeCount elimizde. Şimdi workDate'yi oluşturup actions'ı hesaplıyoruz.
+  // ✅ workDate + actions
   const workDate = new Date(`${todayLocal}T00:00:00.000Z`);
 
   const actions = await getDashboardActionItems({
@@ -47,8 +46,7 @@ export async function getDashboardHomeData() {
     policy,
   });
 
-  // Anomali sayısı: DailyAttendance tablosu doluysa (recompute yaptıysan) çalışır.
-  // Dolmuyorsa 0 görünmesi normal (sonra otomatik hale getireceğiz).
+  // ✅ Anomali KPI (toplam)
   let anomalyCount = 0;
   try {
     anomalyCount = await prisma.dailyAttendance.count({
@@ -57,6 +55,42 @@ export async function getDashboardHomeData() {
   } catch {
     anomalyCount = 0;
   }
+
+  // ✅ Anomali KPI (yüksek önem)
+  const highAnomalyCount = await prisma.dailyAttendance.count({
+    where: {
+      companyId,
+      workDate,
+      anomalies: { hasSome: ["MISSING_PUNCH", "ORPHAN_OUT"] },
+    },
+  });
+
+  // ✅ Daily son hesap zamanı
+  const lastComputed = await prisma.dailyAttendance.findFirst({
+    where: { companyId, workDate },
+    orderBy: { computedAt: "desc" },
+    select: { computedAt: true },
+  });
+
+  // ✅ Sistem Sağlığı (Device metrikleri)
+  const offlineCutoff = DateTime.now().minus({ minutes: 5 }).toJSDate();
+
+  const [deviceTotal, deviceOnline, deviceOffline, lastDeviceSync] = await Promise.all([
+    prisma.device.count({ where: { companyId, isActive: true } }),
+    prisma.device.count({ where: { companyId, isActive: true, lastSeenAt: { gte: offlineCutoff } } }),
+    prisma.device.count({
+      where: {
+        companyId,
+        isActive: true,
+        OR: [{ lastSeenAt: null }, { lastSeenAt: { lt: offlineCutoff } }],
+      },
+    }),
+    prisma.device.findFirst({
+      where: { companyId, isActive: true, lastSyncAt: { not: null } },
+      orderBy: { lastSyncAt: "desc" },
+      select: { lastSyncAt: true },
+    }),
+  ]);
 
   return {
     company,
@@ -67,8 +101,18 @@ export async function getDashboardHomeData() {
       todayEventCount,
       lastEventAt: lastEvent?.occurredAt ?? null,
       anomalyCount,
+      highAnomalyCount,
+      dailyComputedAt: lastComputed?.computedAt ?? null,
+      dailyCoverage: actions.coverage,
     },
     recentEvents,
-    actions, // ✅ bunu ekledik
+    actions,
+    health: {
+      deviceTotal,
+      deviceOnline,
+      deviceOffline,
+      lastSyncAt: lastDeviceSync?.lastSyncAt ?? null,
+      offlineThresholdMinutes: 5,
+    },
   };
 }

@@ -9,6 +9,17 @@ type Employee = {
   lastName: string;
 };
 
+type Door = { 
+  id: string; 
+  code: string; 
+  name: string 
+};
+type Device = { 
+  id: string; 
+  name: string; 
+  ip: string | null 
+};
+
 type RawEventRow = {
   id: string;
   employeeId: string;
@@ -17,7 +28,11 @@ type RawEventRow = {
   direction: "IN" | "OUT";
   source: "MANUAL" | "DEVICE";
   createdAt: string;
+
   employee: { id: string; employeeCode: string; firstName: string; lastName: string };
+
+  door: null | { id: string; code: string; name: string };
+  device: null | { id: string; name: string; ip: string | null };
 };
 
 function toIsoWithLocalOffset(local: string) {
@@ -33,6 +48,9 @@ function toIsoWithLocalOffset(local: string) {
 export default function EventsClient() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [items, setItems] = useState<RawEventRow[]>([]);
+  const [doors, setDoors] = useState<Door[]>([]);
+  const [devices, setDevices] = useState<Device[]>([]);
+
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -44,6 +62,9 @@ export default function EventsClient() {
   const [filterDate, setFilterDate] = useState("");
   const [filterEmployeeId, setFilterEmployeeId] = useState("");
 
+  const [filterDoorId, setFilterDoorId] = useState("");
+  const [filterDeviceId, setFilterDeviceId] = useState("");
+
   const canSave = useMemo(() => employeeId && occurredAtLocal, [employeeId, occurredAtLocal]);
 
   async function loadEmployees() {
@@ -53,10 +74,28 @@ export default function EventsClient() {
     setEmployees(data.items ?? []);
   }
 
+  async function loadDoors() {
+    const res = await fetch("/api/org/doors", { method: "GET" });
+    if (!res.ok) throw new Error(`doors_load_failed_${res.status}`);
+    const data = await res.json();
+    setDoors(Array.isArray(data) ? data : data.items ?? []);
+  }
+
+  async function loadDevices() {
+    const res = await fetch("/api/org/devices", { method: "GET" });
+    if (!res.ok) throw new Error(`devices_load_failed_${res.status}`);
+    const data = await res.json();
+    setDevices(Array.isArray(data) ? data : data.items ?? []);
+  }
+
   async function loadEvents() {
     const qs = new URLSearchParams();
     if (filterDate) qs.set("date", filterDate);
     if (filterEmployeeId) qs.set("employeeId", filterEmployeeId);
+
+    // ✅ yeni filtreler
+    if (filterDoorId) qs.set("doorId", filterDoorId);
+    if (filterDeviceId) qs.set("deviceId", filterDeviceId);
 
     const url = `/api/events${qs.toString() ? `?${qs.toString()}` : ""}`;
     const res = await fetch(url, { method: "GET" });
@@ -70,6 +109,8 @@ export default function EventsClient() {
     setError(null);
     try {
       await loadEmployees();
+      await loadDoors();
+      await loadDevices();
       await loadEvents();
     } catch (e: any) {
       setError(String(e?.message ?? e));
@@ -108,6 +149,14 @@ export default function EventsClient() {
   useEffect(() => {
     loadAll();
   }, []);
+
+  useEffect(() => {
+    // ilk yüklemede loadAll zaten çalışıyor; burada sadece filtre değişince listeyi yeniliyoruz
+    if (!loading) {
+      loadEvents();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterDate, filterEmployeeId, filterDoorId, filterDeviceId]);
 
   if (loading) return <div>Loading...</div>;
 
@@ -161,7 +210,7 @@ export default function EventsClient() {
       <section style={{ border: "1px solid #ddd", borderRadius: 12, padding: 16 }}>
         <h2 style={{ fontSize: 18, fontWeight: 700 }}>Event List</h2>
 
-        <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+        <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr", gap: 10 }}>
           <label style={{ display: "grid", gap: 6 }}>
             <span>Filter Date</span>
             <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} />
@@ -178,6 +227,29 @@ export default function EventsClient() {
               ))}
             </select>
           </label>
+          <label style={{ display: "grid", gap: 6 }}>
+            <span>Filter Door</span>
+            <select value={filterDoorId} onChange={(e) => setFilterDoorId(e.target.value)}>
+              <option value="">All</option>
+              {doors.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.code} - {d.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label style={{ display: "grid", gap: 6 }}>
+            <span>Filter Device</span>
+            <select value={filterDeviceId} onChange={(e) => setFilterDeviceId(e.target.value)}>
+              <option value="">All</option>
+              {devices.map((dv) => (
+                <option key={dv.id} value={dv.id}>
+                  {dv.name}{dv.ip ? ` (${dv.ip})` : ""}
+                </option>
+              ))}
+            </select>
+          </label>
 
           <div style={{ display: "flex", alignItems: "end", gap: 10 }}>
             <button onClick={loadEvents}>Apply</button>
@@ -185,6 +257,8 @@ export default function EventsClient() {
               onClick={() => {
                 setFilterDate("");
                 setFilterEmployeeId("");
+                setFilterDoorId("");
+                setFilterDeviceId("");
                 setTimeout(loadEvents, 0);
               }}
             >
@@ -202,6 +276,8 @@ export default function EventsClient() {
                 <tr>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>When</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Employee</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Kapı</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Cihaz</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Dir</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Source</th>
                 </tr>
@@ -214,6 +290,12 @@ export default function EventsClient() {
                     </td>
                     <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>
                       {ev.employee.employeeCode} - {ev.employee.firstName} {ev.employee.lastName}
+                    </td>
+                    <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>
+                      {ev.door ? `${ev.door.code} - ${ev.door.name}` : "—"}
+                    </td>
+                    <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>
+                      {ev.device ? ev.device.name : "—"}
                     </td>
                     <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{ev.direction}</td>
                     <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{ev.source}</td>
