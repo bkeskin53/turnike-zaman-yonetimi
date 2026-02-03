@@ -6,6 +6,10 @@ datasource db {
   provider = "postgresql"
 }
 
+enum ImportProfileKind {
+  EMPLOYEES
+}
+
 enum UserRole {
   ADMIN
   HR
@@ -38,6 +42,8 @@ enum DailyStatus {
   PRESENT
   ABSENT
   OFF
+  /// Employee is on approved leave
+  LEAVE
 }
 
 enum DoorRole {
@@ -50,6 +56,19 @@ enum DeviceDriver {
   ZKTECO_PULL
   ZKTECO_PUSH
   GENERIC
+}
+
+enum DeviceInboxStatus {
+  PENDING
+  RESOLVED
+  IGNORED
+}
+
+/// Integration log status for enterprise audit.
+enum IntegrationLogStatus {
+  SUCCESS
+  PARTIAL
+  FAILED
 }
 
 model SystemSetting {
@@ -85,10 +104,166 @@ model Company {
   rawEvents        RawEvent[]
   normalizedEvents NormalizedEvent[]
   dailyAttendances DailyAttendance[]
+  dailyAdjustments DailyAdjustment[]
 
   branches Branch[]
   doors    Door[]
   devices  Device[]
+
+  deviceInboxEvents DeviceInboxEvent[] @relation("CompanyDeviceInboxEvents")
+  weeklyShiftPlans  WeeklyShiftPlan[]
+  employeeLeaves    EmployeeLeave[]
+  shiftTemplates    ShiftTemplate[]
+
+  importProfiles                  CompanyImportProfile[]
+  integrationLogs                 IntegrationLog[]
+  integrationEmployeeLinks        IntegrationEmployeeLink[]
+  integrationLeaveLinks           IntegrationLeaveLink[]
+  integrationWeeklyShiftPlanLinks IntegrationWeeklyShiftPlanLink[]
+  integrationSecurityLogs         IntegrationSecurityLog[]
+}
+
+/// Security/audit log for blocked integration attempts (IP, auth, config).
+model IntegrationSecurityLog {
+  id         String   @id @default(cuid())
+  companyId  String?
+  reason     String   @db.VarChar(50)
+  endpoint   String   @db.VarChar(200)
+  sourceIp   String?  @db.VarChar(64)
+  userAgent  String?  @db.VarChar(200)
+  receivedAt DateTime @default(now())
+
+  details Json?
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([reason])
+  @@index([receivedAt])
+}
+
+/// Idempotency + trace link between external HR identity and internal Employee.
+model IntegrationEmployeeLink {
+  id           String @id @default(cuid())
+  companyId    String
+  sourceSystem String @db.VarChar(50)
+  externalRef  String @db.VarChar(200)
+
+  employeeId String
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  lastSeenAt DateTime?
+
+  /// Optional: helps detect unchanged payloads without diffing full objects.
+  lastPayloadHash String? @db.VarChar(64)
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, sourceSystem, externalRef])
+  @@index([companyId, employeeId])
+}
+
+/// Request-level audit log for enterprise traceability.
+model IntegrationLog {
+  id        String @id @default(cuid())
+  companyId String
+
+  /// Correlation id. Client may send X-Request-Id; otherwise server generates.
+  requestId String @unique @db.VarChar(64)
+
+  endpoint     String  @db.VarChar(200)
+  sourceSystem String  @db.VarChar(50)
+  batchRef     String? @db.VarChar(200)
+
+  ip         String? @db.VarChar(64)
+  /// Never store the API key itself. Store a hash/fingerprint for traceability.
+  apiKeyHash String? @db.VarChar(64)
+
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+
+  totalCount     Int @default(0)
+  createdCount   Int @default(0)
+  updatedCount   Int @default(0)
+  unchangedCount Int @default(0)
+  failedCount    Int @default(0)
+
+  status IntegrationLogStatus @default(SUCCESS)
+
+  /// Optional JSONB details.
+  errors      Json?
+  payloadMeta Json?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, sourceSystem, receivedAt])
+}
+
+/// Idempotency link for externally managed leaves (EmployeeLeave).
+model IntegrationLeaveLink {
+  id           String @id @default(cuid())
+  companyId    String
+  sourceSystem String @db.VarChar(50)
+  externalRef  String @db.VarChar(200)
+
+  employeeId String
+  leaveId    String
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  lastSeenAt DateTime?
+
+  lastPayloadHash String? @db.VarChar(64)
+
+  company  Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leave    EmployeeLeave @relation(fields: [leaveId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, sourceSystem, externalRef])
+  @@index([companyId, employeeId])
+  @@index([companyId, leaveId])
+}
+
+/// Idempotency link for WeeklyShiftPlan (shift assignments).
+model IntegrationWeeklyShiftPlanLink {
+  id           String @id @default(cuid())
+  companyId    String
+  sourceSystem String @db.VarChar(50)
+  externalRef  String @db.VarChar(200)
+
+  employeeId        String
+  weeklyShiftPlanId String
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  lastSeenAt DateTime?
+
+  lastPayloadHash String? @db.VarChar(64)
+
+  company         Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee        Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  weeklyShiftPlan WeeklyShiftPlan @relation(fields: [weeklyShiftPlanId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, sourceSystem, externalRef])
+  @@index([companyId, employeeId])
+  @@index([companyId, weeklyShiftPlanId])
+}
+
+model CompanyImportProfile {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  kind    ImportProfileKind
+  mapping Json
+
+  @@unique([companyId, kind])
+  @@index([companyId])
 }
 
 model CompanyPolicy {
@@ -106,10 +281,133 @@ model CompanyPolicy {
   offDayEntryBehavior    OffDayEntryBehavior @default(IGNORE)
   overtimeEnabled        Boolean             @default(false)
 
+  /// Determines how punches are treated on an approved leave day.
+  /// Reuses the OffDayEntryBehavior enum for consistency.
+  /// - IGNORE: Any punches on a leave day are ignored. Worked and overtime minutes are zeroed.
+  /// - FLAG: Punches are counted towards worked minutes (but overtime minutes are zero) and an anomaly is recorded.
+  /// - COUNT_AS_OT: Punches are ignored for worked minutes but counted as overtime. An anomaly is recorded.
+  leaveEntryBehavior OffDayEntryBehavior @default(FLAG)
+
+  /// Opsiyonel: grace dakikalarının çalışılan süreye dahil edilip edilmeyeceği
+  graceAffectsWorked   Boolean?
+  /// Opsiyonel: çıkış sürelerinin moladan düşülüp düşülmeyeceği
+  exitConsumesBreak    Boolean?
+  /// Opsiyonel: tek bir çıkış için izin verilen maksimum dakika
+  maxSingleExitMinutes Int?
+  /// Opsiyonel: bir gün içinde toplam izin verilen çıkış dakikası
+  maxDailyExitMinutes  Int?
+  /// Opsiyonel: çıkış süreleri limitleri aştığında alınacak aksiyon
+  exitExceedAction     ExitExceedAction?
+
+  /// Grace mode to specify how grace minutes are treated.
+  /// - ROUND_ONLY: grace minutes are only used for rounding/tolerance and are not added to worked minutes.
+  /// - PAID_PARTIAL: grace minutes within the threshold are added to worked minutes.
+  graceMode GraceMode @default(ROUND_ONLY)
+
+  /// Worked minutes calculation mode.
+  /// - ACTUAL: workedMinutes is based on accepted IN->OUT segments (existing behavior).
+  /// - CLAMP_TO_SHIFT: segments are clamped to [shiftStart, shiftEnd] so early/late time doesn't inflate worked.
+  workedCalculationMode WorkedCalculationMode @default(ACTUAL)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+/// Types of employee leave.
+/// All leave records must specify a type.
+enum LeaveType {
+  ANNUAL
+  SICK
+  EXCUSED
+  UNPAID
+}
+
+model EmployeeLeave {
+  id         String @id @default(cuid())
+  companyId  String
+  employeeId String
+
+  /// UTC start of leave (inclusive)
+  dateFrom DateTime
+  /// UTC end of leave (inclusive)
+  dateTo   DateTime
+
+  type LeaveType
+  note String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company               Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee              Employee               @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  integrationLeaveLinks IntegrationLeaveLink[]
+
+  @@index([companyId])
+  @@index([employeeId])
+  @@index([dateFrom])
+  @@index([dateTo])
+  @@index([companyId, employeeId])
+  @@index([employeeId, dateFrom, dateTo])
+}
+
+/// Çıkış süresi limitleri aşıldığında raporlama aksiyonları
+enum ExitExceedAction {
+  IGNORE
+  WARN
+  FLAG
+}
+
+/// Modes for grace minute handling.
+/// ROUND_ONLY: grace minutes are only used as tolerance; they do not add to worked time.
+/// PAID_PARTIAL: grace minutes within the threshold count as worked minutes.
+enum GraceMode {
+  ROUND_ONLY
+  PAID_PARTIAL
+}
+
+/// Worked minutes calculation modes.
+/// ACTUAL: workedMinutes is based on accepted IN->OUT segments (existing behavior).
+/// CLAMP_TO_SHIFT: segments are clamped to [shiftStart, shiftEnd] so early/late time doesn't inflate worked.
+enum WorkedCalculationMode {
+  ACTUAL
+  CLAMP_TO_SHIFT
+}
+
+model DailyAdjustment {
+  id         String   @id @default(cuid())
+  companyId  String
+  employeeId String
+  date       DateTime @db.Date
+
+  /// Override status. When set, this replaces the computed DailyStatus for the day.
+  statusOverride               DailyStatus?
+  /// Override total worked minutes. Null means use computed value.
+  workedMinutesOverride        Int?
+  /// Override overtime minutes. Null means use computed value.
+  overtimeMinutesOverride      Int?
+  /// Override overtime early minutes. Null means use computed value.
+  overtimeEarlyMinutesOverride Int?
+  /// Override overtime late minutes. Null means use computed value.
+  overtimeLateMinutesOverride  Int?
+  /// Override late minutes. Null means use computed value.
+  lateMinutesOverride          Int?
+  /// Override early leave minutes. Null means use computed value.
+  earlyLeaveMinutesOverride    Int?
+
+  note String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, date])
+  @@index([companyId])
+  @@index([employeeId])
+  @@index([date])
 }
 
 model Employee {
@@ -120,6 +418,9 @@ model Employee {
   firstName    String  @db.VarChar(100)
   lastName     String  @db.VarChar(100)
   email        String? @db.VarChar(320)
+
+  cardNo       String? @db.VarChar(100)
+  deviceUserId String? @db.VarChar(100)
 
   isActive     Boolean   @default(true)
   hiredAt      DateTime?
@@ -132,10 +433,22 @@ model Employee {
   rawEvents        RawEvent[]
   normalizedEvents NormalizedEvent[]
   dailyAttendances DailyAttendance[]
+  dailyAdjustments DailyAdjustment[]
+
+  resolvedDeviceInboxEvents       DeviceInboxEvent[]               @relation("EmployeeResolvedDeviceInboxEvents")
+  weeklyShiftPlans                WeeklyShiftPlan[]
+  employeeLeaves                  EmployeeLeave[]
+  integrationEmployeeLinks        IntegrationEmployeeLink[]
+  integrationLeaveLinks           IntegrationLeaveLink[]
+  integrationWeeklyShiftPlanLinks IntegrationWeeklyShiftPlanLink[]
 
   @@unique([companyId, employeeCode])
+  @@unique([companyId, cardNo])
+  @@unique([companyId, deviceUserId])
   @@index([companyId])
   @@index([isActive])
+  @@index([companyId, cardNo])
+  @@index([companyId, deviceUserId])
 }
 
 model RawEvent {
@@ -145,6 +458,8 @@ model RawEvent {
 
   doorId   String?
   deviceId String?
+
+  externalRef String? @db.VarChar(200)
 
   occurredAt DateTime
   direction  EventDirection
@@ -160,6 +475,7 @@ model RawEvent {
 
   normalized NormalizedEvent?
 
+  @@unique([companyId, externalRef])
   @@index([companyId, employeeId, occurredAt])
   @@index([companyId, doorId, occurredAt])
   @@index([companyId, deviceId, occurredAt])
@@ -195,10 +511,12 @@ model DailyAttendance {
   firstIn DateTime?
   lastOut DateTime?
 
-  workedMinutes     Int @default(0)
-  overtimeMinutes   Int @default(0)
-  lateMinutes       Int @default(0)
-  earlyLeaveMinutes Int @default(0)
+  workedMinutes        Int @default(0)
+  overtimeMinutes      Int @default(0)
+  overtimeEarlyMinutes Int @default(0)
+  overtimeLateMinutes  Int @default(0)
+  lateMinutes          Int @default(0)
+  earlyLeaveMinutes    Int @default(0)
 
   status    DailyStatus @default(ABSENT)
   anomalies String[]    @default([])
@@ -252,6 +570,8 @@ model Door {
   devices   Device[]
   rawEvents RawEvent[]
 
+  deviceInboxEvents DeviceInboxEvent[] @relation("DoorDeviceInboxEvents")
+
   @@unique([companyId, code])
   @@index([companyId, branchId])
 }
@@ -286,7 +606,125 @@ model Device {
   door      Door?      @relation(fields: [doorId], references: [id], onDelete: SetNull)
   rawEvents RawEvent[]
 
+  deviceInboxEvents DeviceInboxEvent[] @relation("DeviceDeviceInboxEvents")
+
   @@index([companyId])
   @@index([doorId])
   @@index([lastSeenAt])
+}
+
+model DeviceInboxEvent {
+  id        String @id @default(cuid())
+  companyId String
+
+  deviceId String?
+  doorId   String?
+
+  externalRef String @db.VarChar(200)
+
+  occurredAt DateTime
+  direction  EventDirection
+
+  cardNo       String? @db.VarChar(100)
+  deviceUserId String? @db.VarChar(100)
+
+  status             DeviceInboxStatus @default(PENDING)
+  resolvedEmployeeId String?
+  resolvedAt         DateTime?
+  ignoredAt          DateTime?
+
+  rawPayload Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation("CompanyDeviceInboxEvents", fields: [companyId], references: [id], onDelete: Cascade)
+  device  Device? @relation("DeviceDeviceInboxEvents", fields: [deviceId], references: [id], onDelete: SetNull)
+  door    Door?   @relation("DoorDeviceInboxEvents", fields: [doorId], references: [id], onDelete: SetNull)
+
+  resolvedEmployee Employee? @relation("EmployeeResolvedDeviceInboxEvents", fields: [resolvedEmployeeId], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, externalRef])
+  @@index([companyId, status, occurredAt])
+  @@index([companyId, deviceId, occurredAt])
+  @@index([companyId, cardNo])
+  @@index([companyId, deviceUserId])
+}
+
+/// Weekly shift plan for an employee.
+/// Stores planned start and end times (in minutes) for each day of a given week.
+/// The weekStartDate must be the Monday of the week (UTC) and is unique per employee and company.
+/// If a plan is provided for an employee and week, the system uses these times to compute
+/// attendance metrics (late/early/overtime). When no plan exists for a day, penalties are
+/// not calculated and the day is marked as "plansız" (no plan). A unique plan per employee
+/// and week is enforced.
+model WeeklyShiftPlan {
+  id            String   @id @default(cuid())
+  companyId     String
+  employeeId    String
+  weekStartDate DateTime
+
+  // Stage 4: Shift Assignment (SAP uyumlu)
+  shiftTemplateId String? // nullable for backward compatibility
+
+  // Stage 6: SAP Shift Assignment (day-level)
+  monShiftTemplateId String?
+  tueShiftTemplateId String?
+  wedShiftTemplateId String?
+  thuShiftTemplateId String?
+  friShiftTemplateId String?
+  satShiftTemplateId String?
+  sunShiftTemplateId String?
+
+  monStartMinute Int?
+  monEndMinute   Int?
+  tueStartMinute Int?
+  tueEndMinute   Int?
+  wedStartMinute Int?
+  wedEndMinute   Int?
+  thuStartMinute Int?
+  thuEndMinute   Int?
+  friStartMinute Int?
+  friEndMinute   Int?
+  satStartMinute Int?
+  satEndMinute   Int?
+  sunStartMinute Int?
+  sunEndMinute   Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company                         Company                          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee                        Employee                         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  shiftTemplate                   ShiftTemplate?                   @relation(fields: [shiftTemplateId], references: [id], onDelete: SetNull)
+  integrationWeeklyShiftPlanLinks IntegrationWeeklyShiftPlanLink[]
+
+  @@unique([companyId, employeeId, weekStartDate])
+  @@index([companyId])
+  @@index([employeeId])
+  @@index([shiftTemplateId])
+  @@index([monShiftTemplateId])
+  @@index([tueShiftTemplateId])
+  @@index([wedShiftTemplateId])
+  @@index([thuShiftTemplateId])
+  @@index([friShiftTemplateId])
+  @@index([satShiftTemplateId])
+  @@index([sunShiftTemplateId])
+}
+
+model ShiftTemplate {
+  id            String   @id @default(cuid())
+  companyId     String
+  signature     String
+  startTime     String
+  endTime       String
+  spansMidnight Boolean
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  company     Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  weeklyPlans WeeklyShiftPlan[]
+
+  @@unique([companyId, signature])
+  @@index([companyId])
 }

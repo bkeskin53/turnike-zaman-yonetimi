@@ -1,3 +1,10 @@
+// NOTE:
+// This app relies on runtime DB access for authenticated pages (dashboard, reports, etc).
+// During Docker image build (`next build`), static prerendering can accidentally execute
+// DB calls and fail with ECONNREFUSED. For on-prem production reliability, we force
+// dynamic rendering at runtime (no build-time prerender).
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";

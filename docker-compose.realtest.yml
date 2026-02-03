@@ -1,0 +1,28 @@
+services:
+  webhook_receiver:
+    build:
+      context: ./tools/webhook-receiver
+    container_name: turnike_webhook_receiver
+    environment:
+      WEBHOOK_SECRET: my_secret_123
+      PORT: 8088
+    ports:
+      - "8088:8088"
+    restart: unless-stopped
+
+  integration_client:
+    build:
+      context: ./tools/integration-client
+    container_name: turnike_integration_client
+    environment:
+      INTEGRATION_API_KEY: "demo_integration_key_change_me"
+    depends_on:
+      - app
+      - webhook_receiver
+    restart: "no"
+
+  # IMPORTANT: demo env allowlist sadece 127.0.0.1,::1 idi.
+  # Docker içinden gelen istekler 172.x IP ile gelir, o yüzden CIDR ekliyoruz.
+  app:
+    environment:
+      INTEGRATION_IP_ALLOWLIST: "127.0.0.1,::1,172.16.0.0/12"

@@ -39,6 +39,9 @@ export function normalizePunches(events: PunchEvent[]): NormalizationResult {
 
   const seenSignature = new Set<string>(); // direction|timestamp
   let openIn: { occurredAt: Date } | null = null;
+  // Track last processed (non-duplicate) direction, regardless of accepted/rejected.
+  // This enables "CONSECUTIVE_OUT" detection when OUTs arrive back-to-back with no open IN.
+  let lastNonDuplicateDirection: EventDirection | null = null;
 
   let firstIn: Date | null = null;
   let lastOut: Date | null = null;
@@ -54,6 +57,10 @@ export function normalizePunches(events: PunchEvent[]): NormalizationResult {
       return;
     }
     seenSignature.add(sig);
+    // IMPORTANT:
+    // We must compare against the *previous* non-duplicate direction.
+    // Therefore we snapshot it first, then update at the end of processing this event.
+    const prevNonDuplicateDirection = lastNonDuplicateDirection;
 
     if (ev.direction === "IN") {
       if (openIn) {
@@ -67,13 +74,23 @@ export function normalizePunches(events: PunchEvent[]): NormalizationResult {
       acceptedEvents.push({ occurredAt: ev.occurredAt, direction: ev.direction });
       openIn = { occurredAt: ev.occurredAt };
       if (!firstIn) firstIn = ev.occurredAt;
+      lastNonDuplicateDirection = ev.direction;
       return;
     }
 
     // OUT
     if (!openIn) {
-      if (ev.id) decisions[ev.id] = { status: "REJECTED", reason: "ORPHAN_OUT" };
-      addAnomaly("ORPHAN_OUT");
+      // Distinguish between:
+      // - ORPHAN_OUT: OUT with no prior accepted IN
+      // - CONSECUTIVE_OUT: OUT immediately after an accepted OUT (two OUTs in a row)
+      if (prevNonDuplicateDirection === "OUT") {
+        if (ev.id) decisions[ev.id] = { status: "REJECTED", reason: "CONSECUTIVE_OUT" };
+        addAnomaly("CONSECUTIVE_OUT");
+      } else {
+        if (ev.id) decisions[ev.id] = { status: "REJECTED", reason: "ORPHAN_OUT" };
+        addAnomaly("ORPHAN_OUT");
+      }
+      lastNonDuplicateDirection = ev.direction;
       return;
     }
 
@@ -85,6 +102,7 @@ export function normalizePunches(events: PunchEvent[]): NormalizationResult {
     openIn = null;
 
     lastOut = ev.occurredAt;
+    lastNonDuplicateDirection = ev.direction;
   });
 
   const hasOpenIn = !!openIn;

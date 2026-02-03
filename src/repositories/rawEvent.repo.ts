@@ -5,6 +5,8 @@ export async function createRawEvent(companyId: string, input: {
   employeeId: string;
   occurredAt: Date;
   direction: EventDirection;
+  doorId?: string | null;
+  deviceId?: string | null;
   source?: EventSource;
 }) {
   return prisma.rawEvent.create({
@@ -13,6 +15,9 @@ export async function createRawEvent(companyId: string, input: {
       employeeId: input.employeeId,
       occurredAt: input.occurredAt,
       direction: input.direction,
+      // Optional door/device identifiers for manual events
+      doorId: input.doorId ?? null,
+      deviceId: input.deviceId ?? null,
       source: input.source ?? EventSource.MANUAL,
     },
   });

@@ -1,3 +1,4 @@
+// src/auth/jwt.ts
 import jwt from "jsonwebtoken";
 
 export type JwtPayload = {
@@ -6,8 +7,11 @@ export type JwtPayload = {
 };
 
 const secret = () => {
-  const s = process.env.AUTH_JWT_SECRET;
-  if (!s) throw new Error("AUTH_JWT_SECRET is missing");
+  // AUTH_JWT_SECRET yoksa JWT_SECRET veya NEXTAUTH_SECRET'e bak
+  const s = process.env.AUTH_JWT_SECRET || process.env.JWT_SECRET || process.env.NEXTAUTH_SECRET;
+  if (!s) {
+    throw new Error("AUTH_JWT_SECRET is missing");
+  }
   return s;
 };
 

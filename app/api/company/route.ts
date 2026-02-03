@@ -1,3 +1,4 @@
+// app/api/company/route.ts
 import { NextResponse } from "next/server";
 import { requireRole } from "@/src/auth/guard";
 import { authErrorResponse } from "@/src/utils/api";
@@ -9,7 +10,15 @@ export async function GET() {
     const data = await getCompanyBundle();
     return NextResponse.json(data);
   } catch (err) {
-    return authErrorResponse(err) ?? NextResponse.json({ error: "server_error" }, { status: 500 });
+    // Geliştirme ortamında hata mesajını logla
+    if (process.env.NODE_ENV !== "production") {
+      try {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(`[api/company] error = ${msg}`);
+      } catch {}
+    }
+    const res = authErrorResponse(err);
+    return res ?? NextResponse.json({ error: "server_error" }, { status: 500 });
   }
 }
 
@@ -23,6 +32,13 @@ export async function PUT(req: Request) {
     const data = await adminUpdateCompanyName(name);
     return NextResponse.json(data);
   } catch (err) {
-    return authErrorResponse(err) ?? NextResponse.json({ error: "server_error" }, { status: 500 });
+    if (process.env.NODE_ENV !== "production") {
+      try {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(`[api/company][PUT] error = ${msg}`);
+      } catch {}
+    }
+    const res = authErrorResponse(err);
+    return res ?? NextResponse.json({ error: "server_error" }, { status: 500 });
   }
 }

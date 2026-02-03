@@ -1,0 +1,1 @@
+﻿{"sourceSystem":"SAP","batchRef":"poz-leave-001","leaves":[{"externalRef":"LEAVE1","employeeExternalRef":"SAP:EMP1","employeeCode":"E001","type":"ANNUAL","dateFrom":"2026-02-01","dateTo":"2026-02-03","note":"poz test leave"}]}

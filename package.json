@@ -1,8 +1,12 @@
 {
   "name": "turnike-zaman-yonetimi",
   "version": "0.1.0",
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
   "private": true,
   "scripts": {
+    "prebuild": "prisma generate",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

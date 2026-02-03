@@ -1,0 +1,64 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: turnike_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: turnike_dev
+    ports:
+      - "6342:5432"
+    volumes:
+      - turnike_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d turnike_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: .
+    container_name: turnike_migrate
+    env_file:
+      - .env.demo
+    environment:
+      DATABASE_URL: "postgresql://postgres:postgres@db:5432/turnike_dev?schema=public"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["npx", "prisma", "migrate", "deploy"]
+    restart: "no"
+
+  seed:
+    build:
+      context: .
+    container_name: turnike_seed
+    env_file:
+      - .env.demo
+    environment:
+      DATABASE_URL: "postgresql://postgres:postgres@db:5432/turnike_dev?schema=public"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["npx", "prisma", "db", "seed"]
+    restart: "no"
+
+  app:
+    build:
+      context: .
+    container_name: turnike_app
+    env_file:
+      - .env.demo
+    environment:
+      DATABASE_URL: "postgresql://postgres:postgres@db:5432/turnike_dev?schema=public"
+    ports:
+      - "3000:3000"
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  turnike_db_data:

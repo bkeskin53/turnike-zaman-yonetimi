@@ -9,5 +9,6 @@ export function authErrorResponse(err: unknown) {
   if (msg === "FORBIDDEN") {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
-  return null;
+  // Next.js route handlers must always return a Response
+  return NextResponse.json({ error: "INTERNAL_SERVER_ERROR" }, { status: 500 });
 }

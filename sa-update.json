@@ -1,0 +1,21 @@
+﻿{
+  "sourceSystem":"SAP",
+  "batchRef":"sa-002",
+  "plans":[
+    {
+      "externalRef":"SHIFT1",
+      "employeeExternalRef":"SAP:EMP1",
+      "employeeCode":"E001",
+      "weekStartDate":"2026-02-04",
+      "days":{
+        "mon":{"startMinute":540,"endMinute":1080},
+        "tue":null,
+        "wed":{"startMinute":540,"endMinute":1080},
+        "thu":null,
+        "fri":{"startMinute":540,"endMinute":1110},
+        "sat":null,
+        "sun":null
+      }
+    }
+  ]
+}

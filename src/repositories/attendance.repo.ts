@@ -11,6 +11,8 @@ export async function upsertDailyAttendance(input: {
 
   workedMinutes: number;
   overtimeMinutes: number;
+  overtimeEarlyMinutes: number;
+  overtimeLateMinutes: number;
 
   lateMinutes: number;
   earlyLeaveMinutes: number;
@@ -33,6 +35,8 @@ export async function upsertDailyAttendance(input: {
       lastOut: input.lastOut,
       workedMinutes: input.workedMinutes,
       overtimeMinutes: input.overtimeMinutes,
+      overtimeEarlyMinutes: input.overtimeEarlyMinutes,
+      overtimeLateMinutes: input.overtimeLateMinutes,
       lateMinutes: input.lateMinutes,
       earlyLeaveMinutes: input.earlyLeaveMinutes,
       status: input.status,
@@ -47,6 +51,8 @@ export async function upsertDailyAttendance(input: {
       lastOut: input.lastOut,
       workedMinutes: input.workedMinutes,
       overtimeMinutes: input.overtimeMinutes,
+      overtimeEarlyMinutes: input.overtimeEarlyMinutes,
+      overtimeLateMinutes: input.overtimeLateMinutes,
       lateMinutes: input.lateMinutes,
       earlyLeaveMinutes: input.earlyLeaveMinutes,
       status: input.status,

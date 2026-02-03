@@ -1,36 +1,80 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+TURNİKE ZAMAN YÖNETİMİ – DEMO KURULUM
 
-## Getting Started
+Bu demo, Node / PostgreSQL kurmadan, sadece Docker ile çalışır.
 
-First, run the development server:
+1) GEREKSİNİMLER
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+Windows / macOS / Linux
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Docker Desktop kurulu olmalı
+(https://www.docker.com/products/docker-desktop/
+)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Not: Bilgisayarda Node.js, npm veya PostgreSQL kurulu olmasına gerek yoktur.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+2) DEMO’YU ÇALIŞTIRMA
 
-## Learn More
+Zip dosyasını bir klasöre çıkar
+(Örnek: C:\Work\turnike-demo)
 
-To learn more about Next.js, take a look at the following resources:
+Klasör içinde şu dosyalar görünmeli:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+docker-compose.demo.yml
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Dockerfile
 
-## Deploy on Vercel
+.env.demo
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Klasör içinde terminal aç:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Windows (PowerShell):
+
+docker compose -f docker-compose.demo.yml up -d --build
+
+
+macOS / Linux:
+
+docker compose -f docker-compose.demo.yml up -d --build
+
+
+İlk kurulum 5–15 dakika sürebilir (sadece ilk sefer).
+
+3) UYGULAMAYI AÇMA
+
+Tarayıcıdan:
+
+http://localhost:3000
+
+
+Demo ortamında login ekranı yoktur, sistem otomatik açılır.
+
+4) DEMO’YU DURDURMA
+docker compose -f docker-compose.demo.yml down
+
+5) TAM SIFIRDAN YENİDEN KURULUM (DB DAHİL)
+
+Tüm verileri silip tekrar kurmak için:
+
+docker compose -f docker-compose.demo.yml down -v
+docker compose -f docker-compose.demo.yml up -d --build
+
+
+Bu işlem sadece demo verilerini siler.
+
+6) SIK YAŞANAN DURUMLAR
+
+3000 portu doluysa:
+Başka bir uygulama kapatılmalı veya destek istenmeli.
+
+Docker çalışmıyorsa:
+Docker Desktop açık olmalıdır.
+
+7) DESTEK
+
+Herhangi bir sorun yaşanırsa, sadece şu komut çıktıları yeterlidir:
+
+docker compose -f docker-compose.demo.yml ps
+
+
+Turnike Zaman Yönetimi – Demo Paket
+(On-prem, container tabanlı çalışır)

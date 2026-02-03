@@ -1,0 +1,1 @@
+﻿{"sourceSystem":"SAP","batchRef":"poz-emp-001","employees":[{"externalRef":"EMP1","employeeCode":"E001","firstName":"Test","lastName":"User","email":"test.user@example.com","isActive":true}]}

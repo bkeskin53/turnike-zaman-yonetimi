@@ -2,6 +2,7 @@ import { DateTime } from "luxon";
 import { prisma } from "@/src/repositories/prisma";
 import { getCompanyBundle, getActiveCompanyId } from "@/src/services/company.service";
 import { getDashboardActionItems } from "@/src/services/dashboardActions.service";
+import { dbDateFromDayKey } from "@/src/utils/dayKey";
 
 export async function getDashboardHomeData() {
   const companyId = await getActiveCompanyId();
@@ -32,12 +33,14 @@ export async function getDashboardHomeData() {
         direction: true,
         source: true,
         employee: { select: { employeeCode: true, firstName: true, lastName: true } },
+        door: { select: { code: true, name: true } },
+        device: { select: { name: true } },
       },
     }),
   ]);
 
-  // ✅ workDate + actions
-  const workDate = new Date(`${todayLocal}T00:00:00.000Z`);
+  // workDate + actions
+  const workDate = dbDateFromDayKey(todayLocal);
 
   const actions = await getDashboardActionItems({
     companyId,
@@ -46,7 +49,7 @@ export async function getDashboardHomeData() {
     policy,
   });
 
-  // ✅ Anomali KPI (toplam)
+  // Anomaly KPI (total)
   let anomalyCount = 0;
   try {
     anomalyCount = await prisma.dailyAttendance.count({
@@ -56,7 +59,7 @@ export async function getDashboardHomeData() {
     anomalyCount = 0;
   }
 
-  // ✅ Anomali KPI (yüksek önem)
+  // High priority anomaly KPI
   const highAnomalyCount = await prisma.dailyAttendance.count({
     where: {
       companyId,
@@ -65,14 +68,14 @@ export async function getDashboardHomeData() {
     },
   });
 
-  // ✅ Daily son hesap zamanı
+  // Last daily compute time
   const lastComputed = await prisma.dailyAttendance.findFirst({
     where: { companyId, workDate },
     orderBy: { computedAt: "desc" },
     select: { computedAt: true },
   });
 
-  // ✅ Sistem Sağlığı (Device metrikleri)
+  // System health (device metrics)
   const offlineCutoff = DateTime.now().minus({ minutes: 5 }).toJSDate();
 
   const [deviceTotal, deviceOnline, deviceOffline, lastDeviceSync] = await Promise.all([
@@ -92,6 +95,59 @@ export async function getDashboardHomeData() {
     }),
   ]);
 
+  // Daily summary (present/absent/off/missingPunch)
+  const [presentCount, absentCount, offCount, missingPunchCount] = await Promise.all([
+    prisma.dailyAttendance.count({ where: { companyId, workDate, status: "PRESENT" } }),
+    prisma.dailyAttendance.count({ where: { companyId, workDate, status: "ABSENT" } }),
+    prisma.dailyAttendance.count({ where: { companyId, workDate, status: "OFF" } }),
+    prisma.dailyAttendance.count({
+      where: {
+        companyId,
+        workDate,
+        anomalies: { has: "MISSING_PUNCH" },
+      },
+    }),
+  ]);
+
+  // Branch summary (door, device and daily event counts)
+  const branches = await prisma.branch.findMany({
+    where: { companyId, isActive: true },
+    select: { id: true, code: true, name: true },
+    orderBy: { name: "asc" },
+  });
+  const branchSummary = await Promise.all(
+    branches.map(async (b) => {
+      const [doorCount, deviceCount] = await Promise.all([
+        prisma.door.count({ where: { companyId, branchId: b.id, isActive: true } }),
+        prisma.device.count({ where: { companyId, branchId: b.id, isActive: true } }),
+      ]);
+      // Daily event count: from doors + device-only events
+      const countFromDoor = await prisma.rawEvent.count({
+        where: {
+          companyId,
+          occurredAt: { gte: startUtc.toJSDate(), lt: endUtc.toJSDate() },
+          door: { branchId: b.id },
+        },
+      });
+      const countFromDevice = await prisma.rawEvent.count({
+        where: {
+          companyId,
+          occurredAt: { gte: startUtc.toJSDate(), lt: endUtc.toJSDate() },
+          doorId: null,
+          device: { branchId: b.id },
+        },
+      });
+      return {
+        id: b.id,
+        code: b.code,
+        name: b.name,
+        doorCount,
+        deviceCount,
+        eventCount: countFromDoor + countFromDevice,
+      };
+    }),
+  );
+
   return {
     company,
     tz,
@@ -104,6 +160,12 @@ export async function getDashboardHomeData() {
       highAnomalyCount,
       dailyComputedAt: lastComputed?.computedAt ?? null,
       dailyCoverage: actions.coverage,
+      dailySummary: {
+        present: presentCount,
+        absent: absentCount,
+        off: offCount,
+        missingPunch: missingPunchCount,
+      },
     },
     recentEvents,
     actions,
@@ -114,5 +176,6 @@ export async function getDashboardHomeData() {
       lastSyncAt: lastDeviceSync?.lastSyncAt ?? null,
       offlineThresholdMinutes: 5,
     },
+    branchSummary,
   };
 }

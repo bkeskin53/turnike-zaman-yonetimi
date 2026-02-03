@@ -1,4 +1,4 @@
-import AppShell from "@/app/_components/AppShell";
+import AppShell from "@/app/_components/AppShellNoSSR";
 import MonthlyReportClient from "./ui";
 
 export default function MonthlyReportPage() {

@@ -1,10 +1,11 @@
 import { DateTime } from "luxon";
 import { getActiveCompanyId } from "@/src/services/company.service";
 import { listDailyAttendance, listDailyAttendanceRange } from "@/src/repositories/attendance.repo";
+import { dbDateFromDayKey } from "@/src/utils/dayKey";
 
 export async function getDailyReport(date: string) {
   const companyId = await getActiveCompanyId();
-  const workDate = new Date(`${date}T00:00:00.000Z`);
+  const workDate = dbDateFromDayKey(date);
   const items = await listDailyAttendance(companyId, workDate);
   return { date, items };
 }

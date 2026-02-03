@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionOrNull } from "@/src/auth/guard";
 import { getActiveCompanyId } from "@/src/services/company.service";
 import { prisma } from "@/src/repositories/prisma";
+import { Prisma } from "@prisma/client";
 import { UserRole } from "@prisma/client";
 
 async function requireAdminOrHr() {
@@ -13,7 +14,12 @@ async function requireAdminOrHr() {
 
 export async function GET() {
   const session = await requireAdminOrHr();
-  if (!session) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  if (!session) {
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[api/employees][GET] unauthorized");
+    }
+    return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  }
 
   const companyId = await getActiveCompanyId();
 
@@ -27,7 +33,12 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   const session = await requireAdminOrHr();
-  if (!session) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  if (!session) {
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[api/employees][POST] unauthorized");
+    }
+    return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  }
 
   const companyId = await getActiveCompanyId();
   const body = await req.json();
@@ -42,23 +53,41 @@ export async function POST(req: NextRequest) {
   if (!firstName) return NextResponse.json({ error: "FIRST_NAME_REQUIRED" }, { status: 400 });
   if (!lastName) return NextResponse.json({ error: "LAST_NAME_REQUIRED" }, { status: 400 });
 
-  const item = await prisma.employee.create({
-    data: {
-      companyId,
-      employeeCode,
-      firstName,
-      lastName,
-      email,
-      isActive,
-    },
-  });
+  let item;
+  try {
+    item = await prisma.employee.create({
+      data: {
+        companyId,
+        employeeCode,
+        firstName,
+        lastName,
+        email,
+        isActive,
+      },
+    });
+  } catch (e: any) {
+    // Prisma unique constraint: (companyId, employeeCode)
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return NextResponse.json(
+        { error: "EMPLOYEE_CODE_TAKEN" },
+        { status: 409 }
+      );
+    }
+    console.error("employees.POST create failed", e);
+    return NextResponse.json({ error: "INTERNAL_ERROR" }, { status: 500 });
+  }
 
   return NextResponse.json({ item }, { status: 201 });
 }
 
 export async function PUT(req: NextRequest) {
   const session = await requireAdminOrHr();
-  if (!session) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  if (!session) {
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[api/employees][PUT] unauthorized");
+    }
+    return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  }
 
   const companyId = await getActiveCompanyId();
   const body = await req.json();

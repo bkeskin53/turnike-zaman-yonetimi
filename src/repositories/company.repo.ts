@@ -1,3 +1,4 @@
+import type { ExitExceedAction } from "@prisma/client";
 import { prisma } from "@/src/repositories/prisma";
 
 export async function findCompanyById(id: string) {
@@ -36,10 +37,24 @@ export async function upsertPolicy(
     breakMinutes?: number;
     lateGraceMinutes?: number;
     earlyLeaveGraceMinutes?: number;
-
     breakAutoDeductEnabled?: boolean;
     offDayEntryBehavior?: "IGNORE" | "FLAG" | "COUNT_AS_OT";
     overtimeEnabled?: boolean;
+    
+    graceAffectsWorked?: boolean;
+    /**
+     * Optional grace mode. If provided, controls how grace minutes are treated.
+     * ROUND_ONLY: no extra paid grace minutes; PAID_PARTIAL: include grace minutes in worked.
+     */
+    graceMode?: "ROUND_ONLY" | "PAID_PARTIAL";
+    workedCalculationMode?: "ACTUAL" | "CLAMP_TO_SHIFT";
+    exitConsumesBreak?: boolean;
+    maxSingleExitMinutes?: number;
+    maxDailyExitMinutes?: number;
+    exitExceedAction?: ExitExceedAction;
+
+    // Behavior for punches on leave days. Reuses OffDayEntryBehavior.
+    leaveEntryBehavior?: "IGNORE" | "FLAG" | "COUNT_AS_OT";
   }
 ) {
   return prisma.companyPolicy.upsert({

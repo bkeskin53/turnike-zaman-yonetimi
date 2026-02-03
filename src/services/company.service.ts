@@ -99,6 +99,17 @@ export async function updateCompanyPolicy(input: {
   breakAutoDeductEnabled?: boolean;
   offDayEntryBehavior?: "IGNORE" | "FLAG" | "COUNT_AS_OT";
   overtimeEnabled?: boolean;
+  graceAffectsWorked?: boolean;
+  /**
+   * Optional grace mode. When provided, overrides graceAffectsWorked.
+   */
+  graceMode?: "ROUND_ONLY" | "PAID_PARTIAL";
+  workedCalculationMode?: "ACTUAL" | "CLAMP_TO_SHIFT";
+  exitConsumesBreak?: boolean;
+  maxSingleExitMinutes?: number;
+  maxDailyExitMinutes?: number;
+  exitExceedAction?: "IGNORE" | "WARN" | "FLAG"
+  leaveEntryBehavior?: "IGNORE" | "FLAG" | "COUNT_AS_OT";
 }) {
   const companyId = await ensureActiveCompanyId();
   const policy = await upsertPolicy(companyId, input);

@@ -1,0 +1,13 @@
+﻿{
+  "sourceSystem": "SAP",
+  "batchRef": "neg-leave-emp-missing",
+  "leaves": [
+    {
+      "externalRef": "SAP:LEAVE:FAIL1",
+      "employeeExternalRef": "SAP:NO_SUCH_EMP",
+      "type": "ANNUAL",
+      "dateFrom": "2026-02-01",
+      "dateTo": "2026-02-03"
+    }
+  ]
+}

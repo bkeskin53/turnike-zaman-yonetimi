@@ -1,123 +1,198 @@
-import type { CompanyPolicy } from "@prisma/client";
 import { prisma } from "@/src/repositories/prisma";
+import { getCompanyBundle, getActiveCompanyId } from "@/src/services/company.service";
+import { DateTime } from "luxon";
+import { dbDateFromDayKey } from "@/src/utils/dayKey";
 
-export type DashboardActionItem = {
-  key: string;
+/**
+ * Representation of an actionable item on the dashboard.  Each item
+ * describes a situation (policy inconsistency, anomaly, etc.) that may
+ * require user attention.  The `detail` field contains additional
+ * context which is shown in the UI.  The previous version of this
+ * code used `description` in the client; to avoid any implicit `any`
+ * usage we standardise on `detail` here and adjust the UI accordingly.
+ */
+type ActionItem = {
+  id: string;
   title: string;
-  count: number;
-  severity: "high" | "medium" | "low" | "info";
-  description: string;
-  href: string;
-  samples: string[];
+  /**
+   * Detailed description for the action item.  This corresponds to
+   * the `detail` property consumed by the dashboard UI.
+   */
+  detail?: string;
+  href?: string;
+  severity: "INFO" | "WARN" | "ERROR";
+  count?: number;
 };
 
-function validatePolicy(policy: CompanyPolicy): string[] {
-  const issues: string[] = [];
-
-  if (policy.shiftStartMinute >= policy.shiftEndMinute) {
-    issues.push("Vardiya başlangıcı, vardiya bitişinden küçük olmalı.");
-  }
-
-  const shiftLen = Math.max(0, policy.shiftEndMinute - policy.shiftStartMinute);
-  if (policy.breakMinutes < 0) issues.push("Mola dakikası negatif olamaz.");
-  if (policy.breakMinutes > shiftLen && policy.breakAutoDeductEnabled) {
-    issues.push("Mola dakikası vardiya süresinden büyük olamaz (auto-deduct açıkken).");
-  }
-
-  if (policy.lateGraceMinutes < 0) issues.push("Geç kalma toleransı negatif olamaz.");
-  if (policy.earlyLeaveGraceMinutes < 0) issues.push("Erken çıkış toleransı negatif olamaz.");
-
-  if (!policy.timezone || policy.timezone.length < 3) {
-    issues.push("Timezone boş olamaz.");
-  }
-
-  return issues;
+function shiftDurationMinutes(start: number, end: number) {
+  // start/end: 0..1439
+  // normal: 08:00->17:00 => 540
+  // night : 22:00->06:00 => 480
+  // When start === end the duration would be zero and is considered an
+  // invalid configuration.  This function encapsulates that logic.
+  if (start === end) return 0;
+  return end > start ? end - start : 1440 - start + end;
 }
 
-export async function getDashboardActionItems(opts: {
-  companyId: string;
-  workDate: Date; // YYYY-MM-DDT00:00:00.000Z
-  expectedEmployees: number;
-  policy: CompanyPolicy;
-}) {
-  const { companyId, workDate, expectedEmployees, policy } = opts;
+function validatePolicyConsistency(policy: any): ActionItem[] {
+  const items: ActionItem[] = [];
 
-  const computedRows = await prisma.dailyAttendance.count({
+  const tz = policy.timezone ?? "Europe/Istanbul";
+  if (!policy.timezone) {
+    items.push({
+      id: "policy-tz-missing",
+      title: "Timezone tanımlı değil",
+      detail: `Varsayılan olarak ${tz} kullanılacak. (Öneri: Şirket timezone’unu kaydet)`,
+      href: "/policy",
+      severity: "WARN",
+      count: 1,
+    });
+  }
+
+  const shiftStartMinute = Number(policy.shiftStartMinute ?? 8 * 60);
+  const shiftEndMinute = Number(policy.shiftEndMinute ?? 17 * 60);
+
+  // ❗️Gece vardiyası geçerli: start > end olabilir.
+  // Sadece start==end saçma/tehlikeli ve buna dair uyarı veriyoruz.
+  if (shiftStartMinute === shiftEndMinute) {
+    items.push({
+      id: "policy-shift-equal",
+      title: "Policy ayarları kontrol edilmeli",
+      detail: "Vardiya başlangıcı ile bitişi aynı olamaz.",
+      href: "/policy",
+      severity: "ERROR",
+      count: 1,
+    });
+  }
+
+  const shiftLen = shiftDurationMinutes(shiftStartMinute, shiftEndMinute);
+
+  const breakEnabled = !!policy.breakAutoDeductEnabled;
+  const breakMinutes = Number(policy.breakMinutes ?? 0);
+
+  if (breakEnabled && breakMinutes <= 0) {
+    items.push({
+      id: "policy-break-enabled-but-zero",
+      title: "Molayı otomatik düşme açık ama mola dakikası 0",
+      detail: "Mola dakikasını gir veya otomatik düşmeyi kapat.",
+      href: "/policy",
+      severity: "WARN",
+      count: 1,
+    });
+  }
+
+  if (breakEnabled && shiftLen > 0 && breakMinutes >= shiftLen) {
+    items.push({
+      id: "policy-break-too-long",
+      title: "Mola süresi vardiya süresinden uzun",
+      detail: `Vardiya ~${shiftLen} dk, mola ${breakMinutes} dk. Bu ayar çalışmayı 0’a düşürebilir.`,
+      href: "/policy",
+      severity: "ERROR",
+      count: 1,
+    });
+  }
+
+  return items;
+}
+
+/**
+ * Produce a list of actionable items for the dashboard along with summary
+ * statistics.  The caller may provide the company, workDate and expected
+ * employee count in order to compute coverage and severity in a single
+ * location.  If no arguments are provided, the active company and current
+ * date are used along with employee count from the database.  This
+ * overloading is intentional so that legacy code which called this function
+ * with no parameters continues to work.
+ */
+export async function getDashboardActionItems(args?: {
+  companyId?: string;
+  workDate?: Date;
+  expectedEmployees?: number;
+  policy?: any;
+}) {
+  let companyId = args?.companyId;
+  let workDate = args?.workDate;
+  let expectedEmployees = args?.expectedEmployees;
+  let policy = args?.policy;
+
+  // If any of the key parameters are missing, fall back to defaults.
+  if (!companyId || !workDate || expectedEmployees == null || !policy) {
+    companyId = companyId ?? (await getActiveCompanyId());
+    const bundle = await getCompanyBundle();
+    policy = policy ?? bundle.policy;
+    // Determine today's canonical work day.
+    // IMPORTANT:
+    // - "today" must be derived in the configured timezone (policy.timezone)
+    // - but we still persist/query workDate as UTC midnight (YYYY-MM-DDT00:00:00.000Z)
+    //   to match the rest of the system's canonical day representation.
+    const tz = policy?.timezone ?? "Europe/Istanbul";
+    const todayLocal = DateTime.now().setZone(tz).toISODate()!; // YYYY-MM-DD (local)
+    workDate = workDate ?? dbDateFromDayKey(todayLocal);
+    if (expectedEmployees == null) {
+      expectedEmployees = await prisma.employee.count({ where: { companyId, isActive: true } });
+    }
+  }
+
+  const items: ActionItem[] = [];
+
+  // 1) Policy consistency checks
+  items.push(...validatePolicyConsistency(policy));
+
+  // 2) Work-day anomalies (from DailyAttendance)
+  const anomalyRows = await prisma.dailyAttendance.findMany({
     where: { companyId, workDate },
+    select: { anomalies: true },
   });
 
-  const needsRecompute = computedRows < expectedEmployees;
-
-  async function anomalyBlock(key: string, title: string, anomaly: string, severity: DashboardActionItem["severity"]) {
-    const [count, rows] = await Promise.all([
-      prisma.dailyAttendance.count({
-        where: { companyId, workDate, anomalies: { has: anomaly } },
-      }),
-      prisma.dailyAttendance.findMany({
-        where: { companyId, workDate, anomalies: { has: anomaly } },
-        take: 5,
-        orderBy: [{ employee: { employeeCode: "asc" } }],
-        select: {
-          employee: { select: { employeeCode: true, firstName: true, lastName: true } },
-        },
-      }),
-    ]);
-
-    const samples = rows.map(
-      (r) => `${r.employee.employeeCode} ${r.employee.firstName} ${r.employee.lastName}`.trim()
-    );
-
-    return {
-      key,
-      title,
-      count,
-      severity,
-      description: `Bugün "${anomaly}" anomalisine düşen kayıtlar.`,
-      href: "/reports/daily",
-      samples,
-    } satisfies DashboardActionItem;
+  let missingPunchCount = 0;
+  for (const r of anomalyRows) {
+    if ((r.anomalies ?? []).includes("MISSING_PUNCH")) missingPunchCount++;
   }
 
-  const policyIssues = validatePolicy(policy);
-
-  const items: DashboardActionItem[] = [];
-
-  if (needsRecompute) {
+  if (missingPunchCount > 0) {
     items.push({
-      key: "DAILY_NOT_COMPUTED",
-      title: "Günlük hesaplama eksik",
-      count: expectedEmployees - computedRows,
-      severity: "medium",
-      description: `Dashboard anomalileri için Daily hesaplama tamamlanmalı (Computed: ${computedRows}/${expectedEmployees}).`,
+      id: "missing-punch",
+      title: "Eksik Çıkış (Missing Punch)",
+      detail: `Bugün "MISSING_PUNCH" anomalisine düşen kayıtlar.`,
       href: "/reports/daily",
-      samples: [],
+      severity: "WARN",
+      count: missingPunchCount,
     });
   }
 
-  // Günlükten gelen gerçek aksiyonlar
-  items.push(await anomalyBlock("MISSING_PUNCH", "Eksik Çıkış (Missing Punch)", "MISSING_PUNCH", "high"));
-  items.push(await anomalyBlock("ORPHAN_OUT", "Yetim OUT (Girişsiz Çıkış)", "ORPHAN_OUT", "medium"));
-  items.push(await anomalyBlock("CONSECUTIVE_IN", "Ardışık IN (Şüpheli Geçiş)", "CONSECUTIVE_IN", "medium"));
-  items.push(await anomalyBlock("DUPLICATE_EVENT", "Çift Kayıt (Duplicate)", "DUPLICATE_EVENT", "low"));
-  items.push(await anomalyBlock("OFF_DAY_WORK", "Hafta Sonu / Off-day Çalışma", "OFF_DAY_WORK", "info"));
-
-  if (policyIssues.length > 0) {
-    items.push({
-      key: "POLICY_ISSUES",
-      title: "Policy ayarları kontrol edilmeli",
-      count: policyIssues.length,
-      severity: "medium",
-      description: "Policy’de tutarsız veya riskli ayar(lar) var.",
-      href: "/policy",
-      samples: policyIssues.slice(0, 3),
-    });
-  }
-
-  // Boş olanları en sona atalım
-  items.sort((a, b) => b.count - a.count);
-
-  return {
-    coverage: { computedRows, expectedEmployees, needsRecompute },
-    items,
+  // Severity summary (high/medium/low counts)
+  const severity = {
+    high: items.filter((x) => x.severity === "ERROR").length,
+    medium: items.filter((x) => x.severity === "WARN").length,
+    low: items.filter((x) => x.severity === "INFO").length,
   };
+
+  // Daily coverage summary: number of dailyAttendance rows versus expected employees
+  let computedRows = 0;
+  try {
+    computedRows = await prisma.dailyAttendance.count({ where: { companyId, workDate } });
+  } catch {
+    computedRows = 0;
+  }
+  const coverage = {
+    computedRows,
+    expectedEmployees,
+  };
+
+  return { items, coverage, severity };
+}
+
+/**
+ * Legacy alias kept for backwards compatibility.  It delegates to
+ * getDashboardActionItems() with no arguments which will compute sensible
+ * defaults.  New code should call getDashboardActionItems() with explicit
+ * parameters to avoid silent mismatches.
+ */
+export async function getDashboardSnapshot(args?: {
+  companyId?: string;
+  workDate?: Date;
+  expectedEmployees?: number;
+  policy?: any;
+}) {
+  return getDashboardActionItems(args);
 }

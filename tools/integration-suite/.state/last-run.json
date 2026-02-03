@@ -1,0 +1,46 @@
+﻿{
+    "batchRefShiftTemplates":  "SHIFT-TPL-20260202-105404",
+    "shiftTemplates":  [
+                           {
+                               "signature":  "0900-1800",
+                               "endTime":  "18:00",
+                               "startTime":  "09:00"
+                           },
+                           {
+                               "signature":  "1800-0300+1",
+                               "endTime":  "03:00",
+                               "startTime":  "18:00"
+                           }
+                       ],
+    "sourceSystem":  "SAP",
+    "batchRefEmployees":  "EMP-UPSERT-20260202-115604",
+    "employees":  [
+                      {
+                          "externalRef":  "EMP-EXT-001",
+                          "employeeCode":  "E001"
+                      },
+                      {
+                          "externalRef":  "EMP-EXT-002",
+                          "employeeCode":  "E002"
+                      }
+                  ],
+    "batchRefShiftAssignments":  "SHIFT-ASG-20260202-115618",
+    "weekStartDate":  "2026-02-02",
+    "shiftAssignments":  [
+                             {
+                                 "weekStartDate":  "2026-02-02",
+                                 "employeeCode":  "E001",
+                                 "externalRef":  "PLAN-EXT-001"
+                             }
+                         ],
+    "batchRefLeaves":  "LEAVE-20260202-115623",
+    "leaves":  [
+                   {
+                       "dateFrom":  "2026-02-02",
+                       "employeeCode":  "E001",
+                       "dateTo":  "2026-02-03",
+                       "type":  "ANNUAL",
+                       "externalRef":  "LEAVE-EXT-001"
+                   }
+               ]
+}

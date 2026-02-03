@@ -1,10 +1,11 @@
-import AppShell from "@/app/_components/AppShell";
+import AppShell from "@/app/_components/AppShellNoSSR";
 import EventsClient from "./ui";
 
 export default function EventsPage() {
   return (
     <AppShell title="Events" subtitle="Manuel ham olay (RawEvent) girişi ve listeleme">
-      <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+      {/* Tek kök katman: dışarı taşmayı engelle */}
+      <div className="min-w-0 max-w-full overflow-x-hidden">
         <EventsClient />
       </div>
     </AppShell>
