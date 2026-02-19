@@ -28,6 +28,12 @@ function Badge({
   );
 }
 
+function dayStripBg(tone: "ok" | "warn" | "danger") {
+  if (tone === "danger") return "border-red-200 bg-gradient-to-r from-red-50/70 to-white";
+  if (tone === "warn") return "border-amber-200 bg-gradient-to-r from-amber-50/70 to-white";
+  return "border-emerald-200 bg-gradient-to-r from-emerald-50/70 to-white";
+}
+
 function Pill({
   tone,
   children,
@@ -120,16 +126,33 @@ function KpiCard(props: {
   subline?: React.ReactNode;
   footnote?: React.ReactNode;
   tone?: "default" | "danger";
+  accent?: "zinc" | "emerald" | "amber" | "indigo" | "red";
 }) {
   const tone = props.tone ?? "default";
+  const accent = props.accent ?? (tone === "danger" ? "red" : "zinc");
+
+  const accentCls:
+    | "border-emerald-200 bg-emerald-50 text-emerald-700"
+    | "border-amber-200 bg-amber-50 text-amber-800"
+    | "border-indigo-200 bg-indigo-50 text-indigo-700"
+    | "border-red-200 bg-red-50 text-red-700"
+    | "border-zinc-200 bg-zinc-50 text-zinc-700" =
+    accent === "emerald"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+      : accent === "amber"
+        ? "border-amber-200 bg-amber-50 text-amber-800"
+        : accent === "indigo"
+          ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+          : accent === "red"
+            ? "border-red-200 bg-red-50 text-red-700"
+            : "border-zinc-200 bg-zinc-50 text-zinc-700";
+
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+    <div className="rounded-2xl border border-zinc-200 bg-white/90 p-4 shadow-sm">
       <div className="flex items-start gap-3">
         <div
           className={
-            tone === "danger"
-              ? "grid h-10 w-10 place-items-center rounded-xl border border-red-200 bg-red-50 text-red-600"
-              : "grid h-10 w-10 place-items-center rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-700"
+            `grid h-10 w-10 place-items-center rounded-xl border ${accentCls}`
           }
         >
           {props.icon}
@@ -141,11 +164,11 @@ function KpiCard(props: {
               props.valueClassName
                 ? props.valueClassName
                 : tone === "danger"
-                  ? "mt-2 text-3xl font-semibold text-red-600"
+                  ? "mt-2 text-3xl font-semibold text-red-700"
                   : "mt-2 text-3xl font-semibold"
             }
           >            
-          {props.value}
+            {props.value}
           </div>
           {props.subline ? <div className="mt-2 text-xs text-zinc-500">{props.subline}</div> : null}
           {props.footnote ? <div className="mt-1 text-xs text-zinc-500">{props.footnote}</div> : null}
@@ -211,15 +234,15 @@ export default async function DashboardPage() {
 
   return (
     <AppShell
-      title="Dashboard"
+      title="Kontrol Paneli"
       subtitle={`${data.company.name} • ${data.todayLocal} • TZ: ${data.tz}`}
     >
       {/* Page intro (micro-guidance) */}
       <section className="mb-3 text-xs text-zinc-500">
-        Bu ekran günün operasyonel özetini gösterir. Detaylı inceleme ve müdahale için raporları kullanabilirsiniz.
+        Bu ekran günün özetini gösterir. Sorun varsa önce <span className="font-medium">Günlük Durum</span> raporuna bakın.
       </section>
       {/* DAY STATUS STRIP (UI-only, no layout/scroll changes) */}
-      <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+      <section className={`rounded-2xl border p-4 shadow-sm ${dayStripBg(dayTone)}`}>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -273,6 +296,7 @@ export default async function DashboardPage() {
           title="Aktif Personel"
           icon={<KpiIcon kind="people" />}
           value={data.kpi.employeeCount}
+          accent="indigo"
           subline={
             Number(data.kpi.employeeCount ?? 0) === 0
               ? "Henüz personel yok (demo/kurulum aşaması olabilir)"
@@ -281,9 +305,10 @@ export default async function DashboardPage() {
         />
 
         <KpiCard
-          title="Bugün Olay"
+          title="Ham Geçiş"
           icon={<KpiIcon kind="events" />}
           value={data.kpi.todayEventCount}
+          accent={noEventsToday && deviceAllOffline ? "amber" : "zinc"}
           subline={
             noEventsToday
               ? deviceConfigured
@@ -299,6 +324,7 @@ export default async function DashboardPage() {
           title="Son Olay Zamanı"
           icon={<KpiIcon kind="clock" />}
           value={fmt(data.kpi.lastEventAt, data.tz)}
+          accent="zinc"
           valueClassName="mt-2 text-lg font-semibold"
           subline={sinceLastEvent != null ? `Son olaydan bu yana: ${sinceLastEvent}dk` : "—"}
         />
@@ -308,11 +334,12 @@ export default async function DashboardPage() {
           icon={<KpiIcon kind="warn" />}
           value={data.kpi.anomalyCount}
           tone="danger"
+          accent="red"
           subline={
             <>
               Yüksek: <span className="font-semibold">{data.kpi.highAnomalyCount}</span>
               {" • "}
-              Daily:{" "}
+              Hesap:{" "}
               <span className="font-semibold">
                 {data.kpi.dailyCoverage.computedRows}/{data.kpi.dailyCoverage.expectedEmployees}
               </span>
@@ -328,11 +355,28 @@ export default async function DashboardPage() {
         <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm lg:col-span-1">
           {/* Header */}
           <div className="flex items-start justify-between gap-3">
-            <div>
+            <div className="min-w-0">
               <div className="text-sm font-semibold">Aksiyon Bekleyenler</div>
-              <div className="mt-2 text-xs text-zinc-500">
-            Bugün için tespit edilen operasyonel uyarılar
-              </div>
+              <div className="mt-2 text-xs text-zinc-500">Bugün için tespit edilen uyarılar ve yapılacaklar</div>
+              {(sev.high ?? 0) + (sev.medium ?? 0) + (sev.low ?? 0) > 0 ? (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {(sev.high ?? 0) > 0 ? (
+                    <span className="inline-flex items-center rounded-full border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-700">
+                      Yüksek: {sev.high}
+                    </span>
+                  ) : null}
+                  {(sev.medium ?? 0) > 0 ? (
+                    <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800">
+                      Orta: {sev.medium}
+                    </span>
+                  ) : null}
+                  {(sev.low ?? 0) > 0 ? (
+                    <span className="inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-2 py-1 text-[11px] font-semibold text-zinc-700">
+                      Düşük: {sev.low}
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
             <a
               href="/reports/daily"
@@ -343,16 +387,14 @@ export default async function DashboardPage() {
             </a>
           </div>
 
-          <div className="mt-1 text-xs text-zinc-500">
-            Bugün için anomali ve operasyon aksiyonları (Daily hesaplamasına dayanır).
-          </div>
+          <div className="mt-1 text-xs text-zinc-500">Not: Bu liste gün sonu (Daily) hesaplamasına dayanır.</div>
 
           {needsRecompute ? (
-              <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-sm">
+              <div className="mt-3 rounded-xl border border-amber-200 bg-gradient-to-r from-amber-50/80 to-white p-3 text-sm">
                 <div className="font-medium">Günlük hesaplama eksik</div>
                 <div className="mt-1 text-xs text-zinc-600">
-                  Computed: {daily.computedRows}/{daily.expectedEmployees}. Daily sayfasından{" "}
-                  <span className="font-medium">Recompute</span> çalıştır.
+                  Hesaplanan: {daily.computedRows}/{daily.expectedEmployees}. Daily sayfasından{" "}
+                  <span className="font-medium">Recompute</span> çalıştırmanız gerekebilir.
                 </div>
                 <a className="mt-2 inline-block text-xs underline" href="/reports/daily">
                   Daily Rapor’a Git
@@ -439,7 +481,7 @@ export default async function DashboardPage() {
                   <th className="border-b border-zinc-200 pb-2">Zaman</th>
                   <th className="border-b border-zinc-200 pb-2">Personel</th>
                   <th className="border-b border-zinc-200 pb-2">Kapı/Cihaz</th>
-                  <th className="border-b border-zinc-200 pb-2">Dir</th>
+                  <th className="border-b border-zinc-200 pb-2">Yön</th>
                   <th className="border-b border-zinc-200 pb-2">Kaynak</th>
                 </tr>
               </thead>
@@ -484,7 +526,7 @@ export default async function DashboardPage() {
           {/* Quick Actions */}
           <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
             <a
-            className="w-full rounded-xl bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800"
+              className="w-full rounded-xl bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800"
               href="/events"
               title="Hızlı manuel IN/OUT ekle (demo/operasyon)"
             >
@@ -502,7 +544,7 @@ export default async function DashboardPage() {
               href="/admin/company"
               title="Policy / timezone / kural setleri"
             >
-              Company & Policy
+              Şirket & Politika
             </a>
             <a
               className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-medium hover:bg-zinc-50"
@@ -517,7 +559,12 @@ export default async function DashboardPage() {
 
       {/* System Health */}
       <section className="mt-4 rounded-2xl border border-zinc-200 bg-white p-4">
-        <div className="text-sm font-semibold">Sistem Sağlığı (IT)</div>
+        <div className="flex items-center gap-2">
+          <div className="text-sm font-semibold">Cihaz & Senkron</div>
+          <span className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
+            IT
+          </span>
+        </div>
         <div className="mt-1 text-xs text-zinc-500">
           Cihaz bağlantı durumu ve veri senkronizasyon özeti.
         </div>
@@ -567,28 +614,28 @@ export default async function DashboardPage() {
           {/* Daily Summary */}
           <div className="text-sm font-semibold">Günlük Durum Özeti</div>
           <div className="mt-1 text-xs text-zinc-500">
-            Bugünün Daily raporundan özet (present/absent/off/Missing Punch)
+            Bugünün günlük raporundan hızlı özet (kayıt sayısı)
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3 text-center text-sm">
-            <div className="rounded-lg border border-zinc-200 p-3">
-              <div className="text-xs text-zinc-500">Present</div>
-              <div className="mt-1 text-xl font-semibold">{data.kpi.dailySummary.present}</div>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+              <div className="text-xs text-emerald-700">Çalıştı</div>
+              <div className="mt-1 text-xl font-semibold text-emerald-800">{data.kpi.dailySummary.present}</div>
             </div>
-            <div className="rounded-lg border border-zinc-200 p-3">
-              <div className="text-xs text-zinc-500">Absent</div>
+            <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+              <div className="text-xs text-zinc-600">Gelmedi</div>
               <div className="mt-1 text-xl font-semibold">{data.kpi.dailySummary.absent}</div>
             </div>
-            <div className="rounded-lg border border-zinc-200 p-3">
-              <div className="text-xs text-zinc-500">Off</div>
-              <div className="mt-1 text-xl font-semibold">{data.kpi.dailySummary.off}</div>
+            <div className="rounded-xl border border-indigo-200 bg-indigo-50/60 p-3">
+              <div className="text-xs text-indigo-700">OFF</div>
+              <div className="mt-1 text-xl font-semibold text-indigo-800">{data.kpi.dailySummary.off}</div>
             </div>
-            <div className="rounded-lg border border-zinc-200 p-3">
-              <div className="text-xs text-zinc-500">Missing Punch</div>
-              <div className="mt-1 text-xl font-semibold">{data.kpi.dailySummary.missingPunch}</div>
+            <div className="rounded-xl border border-red-200 bg-red-50/60 p-3">
+              <div className="text-xs text-red-700">Eksik Punch</div>
+              <div className="mt-1 text-xl font-semibold text-red-800">{data.kpi.dailySummary.missingPunch}</div>
             </div>
           </div>
           <div className="mt-4 text-xs text-zinc-500">
-            Bu bilgiler Daily rapordaki kayıt sayısından hesaplanır.
+            Bu bilgiler günlük rapordaki kayıt sayısından hesaplanır.
             <a className="ml-1 underline" href="/reports/daily">
               Detaylar
             </a>

@@ -5,10 +5,11 @@ import {
   createLeaveForEmployee,
   LeaveOverlapError,
   LeaveInvalidRangeError,
+  EmploymentNotEmployedError,
 } from "@/src/services/leave.service";
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  await requireRole(["ADMIN", "HR"]);
+  await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR"]);
   const { id } = await params;
 
   const url = new URL(req.url);
@@ -20,7 +21,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  await requireRole(["ADMIN", "HR"]);
+  await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR"]);
   const { id } = await params;
 
   const body = await req.json();
@@ -28,6 +29,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     await createLeaveForEmployee({ employeeId: id, ...body });
     return NextResponse.json({ ok: true });
   } catch (e: any) {
+    if (e instanceof EmploymentNotEmployedError) {
+      return NextResponse.json(
+        { error: e.code, message: e.message, meta: e.meta ?? null },
+        { status: 400 }
+      );
+    }
     if (e instanceof LeaveInvalidRangeError) {
       return NextResponse.json(
         { error: e.code, message: e.message },

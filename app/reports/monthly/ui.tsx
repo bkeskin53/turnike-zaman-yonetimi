@@ -80,6 +80,8 @@ function badgeClass(kind: "ok" | "warn" | "bad" | "neutral") {
 
 function anomalyLabel(code: string): string {
   switch (code) {
+    case "LATE_OUT_CAPTURED":
+      return "Geç OUT yakalandı (ertesi güne sarkan çıkış bugünü kapattı)";
     case "MISSING_PUNCH":
       return "Eksik punch (IN/OUT çifti tamamlanmamış)";
     case "CONSECUTIVE_IN":
@@ -88,6 +90,10 @@ function anomalyLabel(code: string): string {
       return "Arka arkaya OUT (önceki OUT’tan sonra tekrar OUT)";
     case "ORPHAN_OUT":
       return "Yetim OUT (öncesinde kabul edilmiş IN yok)";
+    case "UNSCHEDULED_WORK":
+      return "Vardiya dışı fiili çalışma (planlanan vardiya ile uyuşmuyor)";
+    case "OUTSIDE_SHIFT_IGNORED":
+      return "Vardiya penceresi dışında punch (CLAMP: worked'e dahil edilmedi)";
     default:
       return code;
   }

@@ -2,8 +2,10 @@ export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 import { EventDirection, EventSource, Prisma } from "@prisma/client";
+import { requireRole } from "@/src/auth/guard";
 import { prisma } from "@/src/repositories/prisma";
 import { getActiveCompanyId } from "@/src/services/company.service";
+import { authErrorResponse } from "@/src/utils/api";
 
 function asStr(v: unknown) {
   return String(v ?? "").trim();
@@ -18,21 +20,24 @@ async function safeJson(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const companyId = await getActiveCompanyId();
-  const body = await safeJson(req);
-
-  const inboxId = asStr(body.inboxId);
-  const employeeId = asStr(body.employeeId);
-  const allowReplaceIdentity = Boolean(body.allowReplaceIdentity);
-
-  if (!inboxId || !employeeId) {
-    return NextResponse.json(
-      { ok: false, error: "inboxId ve employeeId zorunlu" },
-      { status: 400 },
-    );
-  }
-
   try {
+    // OPS: resolving inbox events mutates employee identities + writes raw events
+    await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR"]);
+
+    const companyId = await getActiveCompanyId();
+    const body = await safeJson(req);
+
+    const inboxId = asStr(body.inboxId);
+    const employeeId = asStr(body.employeeId);
+    const allowReplaceIdentity = Boolean(body.allowReplaceIdentity);
+
+    if (!inboxId || !employeeId) {
+      return NextResponse.json(
+        { ok: false, error: "inboxId ve employeeId zorunlu" },
+        { status: 400 },
+      );
+    }
+
     const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const inbox = await tx.deviceInboxEvent.findFirst({
         where: { id: inboxId, companyId },
@@ -328,6 +333,11 @@ export async function POST(req: Request) {
       wroteUserId: result.userAction !== "NONE",
     });
   } catch (e: any) {
+    // auth errors
+    if (e instanceof Error && (e.message === "UNAUTHORIZED" || e.message === "FORBIDDEN")) {
+      return authErrorResponse(e);
+    }
+
     console.error("device-inbox resolve failed", e);
     return NextResponse.json({ ok: false, error: "Resolve başarısız" }, { status: 500 });
   }

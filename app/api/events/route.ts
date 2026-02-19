@@ -5,7 +5,7 @@ import { addManualEvent, getEvents } from "@/src/services/rawEvent.service";
 
 export async function GET(req: Request) {
   try {
-    await requireRole(["ADMIN", "HR"]);
+    await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR"]);
 
     const url = new URL(req.url);
     const employeeId = url.searchParams.get("employeeId") ?? undefined;
@@ -23,7 +23,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    await requireRole(["ADMIN", "HR"]);
+    await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR"]);
     const body = await req.json().catch(() => null);
 
     const created = await addManualEvent({
@@ -45,6 +45,10 @@ export async function POST(req: Request) {
     if (err instanceof Error) {
       if (err.message === "EMPLOYEE_NOT_FOUND") {
         return NextResponse.json({ error: "employee_not_found" }, { status: 404 });
+      }
+      if (err.message === "EMPLOYEE_NOT_EMPLOYED_ON_DATE") {
+        const dayKey = (err as any)?.meta?.dayKey ?? null;
+        return NextResponse.json({ error: "EMPLOYEE_NOT_EMPLOYED_ON_DATE", dayKey }, { status: 400 });
       }
       if (err.message === "DOOR_NOT_FOUND") {
         return NextResponse.json({ error: "door_not_found" }, { status: 404 });

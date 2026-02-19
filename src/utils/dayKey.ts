@@ -9,6 +9,14 @@ export function dayKeyToday(tz: string): string {
   return DateTime.now().setZone(tz).toISODate()!;
 }
 
+/**
+ * Canonical dayKey for an arbitrary instant (JS Date) in policy.timezone.
+ * Used when an event occurs at a specific timestamp but we need its canonical work-day.
+ */
+export function dayKeyFromInstant(instant: Date, tz: string): string {
+  return DateTime.fromJSDate(instant).setZone(tz).toISODate()!;
+}
+
 export function isISODate(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }

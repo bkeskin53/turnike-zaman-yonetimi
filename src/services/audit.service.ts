@@ -2,7 +2,8 @@
 // Zero-migration audit logging (server-side). Output is structured JSON for easy ingestion.
 
 export type AuditAction =
-  | "SHIFT_ASSIGNMENTS_BULK_WEEK_TEMPLATE";
+  | "SHIFT_ASSIGNMENTS_BULK_WEEK_TEMPLATE"
+  | "SHIFT_PLANNER_SAVE";
 
 export function auditLog(input: {
   action: AuditAction;

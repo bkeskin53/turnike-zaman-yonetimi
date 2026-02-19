@@ -8,7 +8,7 @@ import { prisma } from "@/src/repositories/prisma";
 import { UserRole } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
-export type Role = "ADMIN" | "HR" | "USER";
+export type Role = "SYSTEM_ADMIN" | "HR_CONFIG_ADMIN" | "HR_OPERATOR" | "SUPERVISOR";
 
 async function ensureDevAdmin(): Promise<{ id: string; role: UserRole } | null> {
   // sadece dev bypass açıkken çalışır
@@ -31,7 +31,7 @@ async function ensureDevAdmin(): Promise<{ id: string; role: UserRole } | null> 
     data: {
       email,
       passwordHash,
-      role: UserRole.ADMIN,
+      role: UserRole.SYSTEM_ADMIN,
       isActive: true,
     },
     select: { id: true, role: true },
@@ -61,7 +61,7 @@ async function devBypassSessionOrNull(): Promise<{ userId: string; role: Role } 
   try {
     // Önce aktif admin ara
     const admin = await prisma.user.findFirst({
-      where: { role: UserRole.ADMIN, isActive: true },
+      where: { role: UserRole.SYSTEM_ADMIN, isActive: true },
       select: { id: true, role: true },
     });
 

@@ -6,6 +6,7 @@ import {
 } from "@/src/repositories/shiftPlan.repo";
 import { getShiftTemplateById } from "@/src/services/shiftTemplate.service";
 import { findShiftTemplateBySignature } from "@/src/repositories/shiftTemplate.repo";
+import { resolveWorkScheduleShiftForEmployeeOnDate } from "@/src/services/workSchedule.service";
 
 /**
  * Compute the UTC week start (Monday 00:00) for a given ISO date string and timezone.
@@ -29,11 +30,14 @@ export type ShiftSignature = {
   signature: string;       // "0900-1800" | "2200-0600+1"
 };
 
-export type ShiftSource = "POLICY" | "WEEK_TEMPLATE" | "DAY_TEMPLATE" | "CUSTOM";
+export type ShiftSource = "POLICY" | "WEEK_TEMPLATE" | "DAY_TEMPLATE" | "CUSTOM" | "WORK_SCHEDULE";
 
 export type ResolvedShift = {
   source: ShiftSource;
   signature: ShiftSignature;
+  shiftCode?: string | null;
+  shiftTemplateId?: string | null;
+  isOffDay?: boolean;
 };
 
 function normalizeTime(value: string): string {
@@ -73,13 +77,26 @@ export async function resolveShiftForEmployeeOnDate(
   employeeId: string,
   date: string
 ): Promise<ResolvedShift> {
+  // Defensive normalize: avoid Prisma throwing when employeeId/date is missing/invalid.
+  const empId = String(employeeId ?? "").trim();
+  const dayKey = String(date ?? "").trim();
+  if (!empId || !dayKey) {
+    // Stable placeholder (UI/debug). Do NOT throw.
+    return {
+      source: "POLICY",
+      shiftCode: null,
+      shiftTemplateId: null,
+      signature: { startTime: "--:--", endTime: "--:--", spansMidnight: false, signature: "—" },
+    };
+  }
+
   const { company, policy } = await getCompanyBundle();
- const tz = policy.timezone || "Europe/Istanbul";
-  const weekStart = computeWeekStartUTC(date, tz);
-  const plan = await findWeeklyShiftPlan(company.id, employeeId, weekStart);
+  const tz = policy.timezone || "Europe/Istanbul";
+  const weekStart = computeWeekStartUTC(dayKey, tz);
+  const plan = await findWeeklyShiftPlan(company.id, empId, weekStart);
 
   // Day index 1..7 (Monday..Sunday) in local timezone
-  const dayIndex = DateTime.fromISO(date, { zone: tz }).weekday; // 1..7
+  const dayIndex = DateTime.fromISO(dayKey, { zone: tz }).weekday; // 1..7
 
   let dayTplId: string | null | undefined;
   let start: number | null | undefined;
@@ -130,6 +147,8 @@ export async function resolveShiftForEmployeeOnDate(
       if (tpl) {
         return {
           source: "DAY_TEMPLATE",
+          shiftCode: (tpl as any).shiftCode ?? tpl.signature,
+          shiftTemplateId: tpl.id,
           signature: {
             startTime: tpl.startTime,
             endTime: tpl.endTime,
@@ -144,7 +163,7 @@ export async function resolveShiftForEmployeeOnDate(
     const hasMinutes = start != null && end != null;
     if (hasMinutes) {
       const sig = buildShiftSignature(minuteToTime(start as number), minuteToTime(end as number));
-      return { source: "CUSTOM", signature: sig };
+      return { source: "CUSTOM", shiftCode: null, shiftTemplateId: null, signature: sig };
     }
 
     // 3) Week default template
@@ -153,6 +172,8 @@ export async function resolveShiftForEmployeeOnDate(
       if (tpl) {
         return {
           source: "WEEK_TEMPLATE",
+          shiftCode: (tpl as any).shiftCode ?? tpl.signature,
+          shiftTemplateId: tpl.id,
           signature: {
             startTime: tpl.startTime,
             endTime: tpl.endTime,
@@ -164,21 +185,240 @@ export async function resolveShiftForEmployeeOnDate(
     }
  }
 
-  // 4) Policy fallback
+  // 4) Period Work Schedule fallback (SAP: Period Work Schedule / Work Schedule Rule)
+    const ws = await resolveWorkScheduleShiftForEmployeeOnDate({
+      companyId: company.id,
+      employeeId: empId,
+      dayKey,
+      timezone: tz,
+    });
+    if (ws) {
+      if (ws.kind === "OFF") {
+        // IMPORTANT: OFF must NOT fallback to Policy for semantics.
+        // We keep placeholder times; minutes can be injected later for windowing if needed.
+        return {
+          source: "WORK_SCHEDULE",
+          shiftCode: null,
+          shiftTemplateId: null,
+          isOffDay: true,
+          signature: { startTime: "--:--", endTime: "--:--", spansMidnight: false, signature: "OFF" },
+        };
+      }
+      return {
+        source: "WORK_SCHEDULE",
+        shiftCode: ws.shiftCode ?? null,
+        shiftTemplateId: ws.shiftTemplateId,
+        isOffDay: false,
+        signature: ws.signature,
+      };
+    }
+
+  // 5) Policy fallback
   const startMin = (policy as any).shiftStartMinute;
   const endMin = (policy as any).shiftEndMinute;
   if (typeof startMin === "number" && typeof endMin === "number") {
     const sig = buildShiftSignature(minuteToTime(startMin), minuteToTime(endMin));
-    return { source: "POLICY", signature: sig };
+    return { source: "POLICY", shiftCode: null, shiftTemplateId: null, signature: sig };
   }
 
   // Policy minutes missing -> return stable placeholder (UI only)
   return {
     source: "POLICY",
+    shiftCode: null,
+    shiftTemplateId: null,
     signature: { startTime: "--:--", endTime: "--:--", spansMidnight: false, signature: "Policy" },
   };
 }
 
+export type ResolvedShiftMinutes = {
+  source: ShiftSource;
+  signature: string;
+  spansMidnight: boolean;
+  shiftCode?: string | null;
+  shiftTemplateId?: string | null;
+  startMinute?: number;
+  endMinute?: number;
+  isOffDay?: boolean;
+};
+
+function isSignatureLike(value: string): boolean {
+  // Examples: 0900-1700, 2200-0600+1
+  return /^\d{4}-\d{4}(\+1)?$/.test(value);
+}
+
+/**
+ * Parse signature string into minute ints (engine-safe fallback).
+ * This avoids “plan var ama start/end undefined” gibi edge-case’lerde
+ * computeDaily’nin default 08-17’ye düşmesini engeller.
+ */
+export function parseShiftSignatureToMinutes(signature: string): {
+  startMinute: number;
+  endMinute: number;
+  spansMidnight: boolean;
+} | null {
+  if (!isSignatureLike(signature)) return null;
+  const base = signature.replace("+1", "");
+  const [a, b] = base.split("-");
+  if (!a || !b) return null;
+
+  const sh = Number(a.slice(0, 2));
+  const sm = Number(a.slice(2, 4));
+  const eh = Number(b.slice(0, 2));
+  const em = Number(b.slice(2, 4));
+  if (
+    Number.isNaN(sh) || Number.isNaN(sm) || Number.isNaN(eh) || Number.isNaN(em) ||
+    sh < 0 || sh > 23 || eh < 0 || eh > 23 || sm < 0 || sm > 59 || em < 0 || em > 59
+  ) {
+    return null;
+  }
+
+  const startMinute = sh * 60 + sm;
+  const endMinute = eh * 60 + em;
+  const spansMidnight = signature.includes("+1") || endMinute <= startMinute;
+  return { startMinute, endMinute, spansMidnight };
+}
+
+/**
+ * Engine-safe resolver: returns effective shift minutes + source.
+ * Precedence (SAP): Day Template > Day Custom Minutes > Week Template > Policy
+ *
+ * NOTE: If policy minutes are missing, startMinute/endMinute will be undefined.
+ * ComputeDaily has its own defaults; but for audit/debug we keep "undefined" here.
+ */
+export async function resolveShiftMinutesForEmployeeOnDate(
+  employeeId: string,
+  date: string
+): Promise<ResolvedShiftMinutes> {
+  const r = await resolveShiftForEmployeeOnDate(employeeId, date);
+  const st = r.signature.startTime;
+  const et = r.signature.endTime;
+
+  // UI placeholder case ("--:--") => no explicit minutes
+  if (st === "--:--" || et === "--:--") {
+    return {
+      source: r.source,
+      signature: r.signature.signature,
+      spansMidnight: r.signature.spansMidnight,
+      shiftCode: r.shiftCode ?? null,
+      shiftTemplateId: r.shiftTemplateId ?? null,
+      isOffDay: !!(r as any).isOffDay,
+      startMinute: undefined,
+      endMinute: undefined,
+    };
+  }
+
+  return {
+    source: r.source,
+    signature: r.signature.signature,
+    spansMidnight: r.signature.spansMidnight,
+    shiftCode: r.shiftCode ?? null,
+    shiftTemplateId: r.shiftTemplateId ?? null,
+    isOffDay: !!(r as any).isOffDay,
+    startMinute: timeToMinute(st),
+    endMinute: timeToMinute(et),
+  };
+}
+
+/**
+ * ✅ Canonical engine entry point (FAZ-2)
+ * Always prefer explicit minutes from templates/custom/policy.
+ * If minutes are missing but signature is parseable, derive minutes from signature.
+ */
+export async function resolveShiftForDay(
+  employeeId: string,
+  date: string
+): Promise<ResolvedShiftMinutes> {
+  const r = await resolveShiftMinutesForEmployeeOnDate(employeeId, date);
+
+  // If minutes are missing but signature looks like a real signature, derive minutes.
+  if (
+    (r.startMinute == null || r.endMinute == null) &&
+    isSignatureLike(r.signature)
+  ) {
+    const parsed = parseShiftSignatureToMinutes(r.signature);
+    if (parsed) {
+      return {
+        ...r,
+        spansMidnight: parsed.spansMidnight,
+        startMinute: parsed.startMinute,
+        endMinute: parsed.endMinute,
+      };
+    }
+  }
+
+  return r;
+}
+
+/**
+ * Engine-safe resolver WITH caller-provided fallback minutes.
+ * Precedence (SAP): Day Template > Day Custom Minutes > Week Template > (fallback minutes)
+ *
+ * Use-case:
+ * - If planner has no plan for a day, we want workforce rule-set (effectivePolicy) shiftStart/End
+ *   to be used as the "policy fallback" rather than company default.
+ */
+export async function resolveShiftForDayWithFallbackMinutes(args: {
+  employeeId: string;
+  date: string;
+  fallbackStartMinute?: number;
+  fallbackEndMinute?: number;
+}): Promise<ResolvedShiftMinutes> {
+  const r = await resolveShiftMinutesForEmployeeOnDate(args.employeeId, args.date);
+
+  const s = args.fallbackStartMinute;
+  const e = args.fallbackEndMinute;
+
+  // OFF day: keep OFF semantics, but allow caller to inject minutes (windowing needs numbers).
+  if (r.isOffDay) {
+    if (typeof s === "number" && typeof e === "number") {
+      const spansMidnight = e <= s;
+      return {
+        ...r,
+        spansMidnight,
+        startMinute: s,
+        endMinute: e,
+      };
+    }
+    return r;
+  }
+
+  // If planner/template/custom already produced minutes, keep them.
+  //
+  // IMPORTANT:
+  // When source === "POLICY", the minutes may come from *company default* policy.
+  // If caller provided fallback minutes (e.g., workforce/segment ruleset), we must
+  // prefer caller's fallback so shift won't stay "DEFAULT" while policy changes.
+  if (typeof r.startMinute === "number" && typeof r.endMinute === "number") {
+    if (r.source !== "POLICY") return r;
+
+    if (typeof s === "number" && typeof e === "number") {
+      const sig = buildShiftSignature(minuteToTime(s), minuteToTime(e));
+      return {
+        ...r,
+        source: "POLICY",
+        signature: sig.signature,
+        spansMidnight: sig.spansMidnight,
+        startMinute: s,
+        endMinute: e,
+      };
+    }
+    return r;
+  }
+
+  if (typeof s === "number" && typeof e === "number") {
+    const sig = buildShiftSignature(minuteToTime(s), minuteToTime(e));
+    return {
+      source: "POLICY",
+      signature: sig.signature,
+      spansMidnight: sig.spansMidnight,
+      startMinute: s,
+      endMinute: e,
+    };
+  }
+
+  // As a last resort, keep whatever we had (may be undefined).
+  return r;
+}
 
 /**
  * Retrieve start and end minutes for a given employee and date from the weekly shift plan, if defined.

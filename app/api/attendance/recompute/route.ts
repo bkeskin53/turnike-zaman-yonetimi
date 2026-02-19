@@ -5,7 +5,7 @@ import { recomputeAttendanceForDate } from "@/src/services/attendance.service";
 
 export async function POST(req: Request) {
   try {
-    await requireRole(["ADMIN", "HR"]);
+    await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR"]);
 
     const url = new URL(req.url);
     const date = url.searchParams.get("date") ?? "";

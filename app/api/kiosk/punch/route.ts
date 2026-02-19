@@ -9,7 +9,7 @@ export async function POST(req: Request) {
   try {
     // For now, reuse existing authorization model.
     // Later we can introduce a dedicated KIOSK role without changing kiosk UX.
-    await requireRole(["ADMIN", "HR"]);
+    await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR"]);
 
     const companyId = await getActiveCompanyId();
     const body = await req.json().catch(() => null);

@@ -7,6 +7,7 @@ import {
   createEmployeeLeave,
   deleteEmployeeLeave,
 } from "@/src/repositories/leave.repo";
+import { assertEmployeeEmployedForRange, EmploymentNotEmployedError } from "@/src/services/employmentGuard.service";
 
 export class LeaveOverlapError extends Error {
   code = "LEAVE_OVERLAP" as const;
@@ -25,6 +26,8 @@ export class LeaveInvalidRangeError extends Error {
     this.name = "LeaveInvalidRangeError";
   }
 }
+
+export { EmploymentNotEmployedError };
 
 export async function isEmployeeOnLeave(employeeId: string, date: string) {
   const { policy } = await getCompanyBundle();
@@ -91,6 +94,12 @@ export async function createLeaveForEmployee(data: {
 }) {
   const { policy } = await getCompanyBundle();
   const tz = policy.timezone || "Europe/Istanbul";
+  // ✅ Eksik-3: leave sadece employment validity içinde girilebilir (strict)
+  await assertEmployeeEmployedForRange({
+    employeeId: data.employeeId,
+    fromDayKey: data.dateFrom,
+    toDayKey: data.dateTo,
+  });
   const fromUtc = DateTime.fromISO(data.dateFrom, { zone: tz })
     .startOf("day")
     .toUTC()

@@ -3,6 +3,112 @@
 import { useEffect, useMemo, useState } from "react";
 import { DateTime } from "luxon";
 
+type Tone = "neutral" | "info" | "good" | "warn" | "danger" | "violet";
+
+function cx(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(" ");
+}
+
+function Badge({
+  tone = "neutral",
+  children,
+  className,
+}: {
+  tone?: Tone;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  const map: Record<Tone, string> = {
+    neutral: "bg-zinc-100 text-zinc-700 ring-zinc-200/60",
+    info: "bg-sky-50 text-sky-700 ring-sky-200/60",
+    good: "bg-emerald-50 text-emerald-700 ring-emerald-200/60",
+    warn: "bg-amber-50 text-amber-900 ring-amber-200/60",
+    danger: "bg-rose-50 text-rose-800 ring-rose-200/60",
+    violet: "bg-violet-50 text-violet-800 ring-violet-200/60",
+  };
+  return (
+    <span
+      className={cx(
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ring-inset shadow-sm uppercase tracking-tight",
+        map[tone],
+        className
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+function Card({
+  tone = "neutral",
+  title,
+  subtitle,
+  right,
+  children,
+  className,
+}: {
+  tone?: Tone;
+  title?: React.ReactNode;
+  subtitle?: React.ReactNode;
+  right?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  const toneBg: Record<Tone, string> = {
+    neutral: "from-white to-zinc-50/50",
+    info: "from-white to-sky-50/30",
+    good: "from-white to-emerald-50/30",
+    warn: "from-white to-amber-50/30",
+    danger: "from-white to-rose-50/30",
+    violet: "from-white to-violet-50/30",
+  };
+  return (
+    <div
+      className={cx(
+        "rounded-2xl border border-zinc-200/70 bg-gradient-to-b p-5 shadow-[0_1px_3px_rgba(0,0,0,0.05)] min-w-0 transition-all duration-300 hover:shadow-md",
+        toneBg[tone],
+        className
+      )}
+    >
+      {title || subtitle || right ? (
+        <div className="mb-4 flex items-start justify-between gap-3 border-b border-zinc-100 pb-4">
+          <div className="min-w-0">
+            {title ? (
+              <div className="text-lg font-bold text-zinc-900 leading-tight tracking-tight">{title}</div>
+            ) : null}
+            {subtitle ? (
+              <div className="mt-1 text-sm text-zinc-500 font-medium leading-relaxed italic">{subtitle}</div>
+            ) : null}
+          </div>
+          {right ? <div className="shrink-0">{right}</div> : null}
+        </div>
+      ) : null}
+      {children}
+    </div>
+  );
+}
+
+function Button({
+  variant = "secondary",
+  className,
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "ghost" | "danger" }) {
+  const base =
+    "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition-all active:scale-95 " +
+    "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm";
+  const map = {
+    primary: "bg-indigo-600 text-white hover:bg-indigo-700 border border-indigo-600/20",
+    secondary: "bg-white text-zinc-700 border border-zinc-200 hover:bg-zinc-50 hover:text-zinc-900",
+    ghost: "bg-transparent text-zinc-600 hover:bg-zinc-100 border border-transparent",
+    danger: "bg-rose-600 text-white hover:bg-rose-700 border border-rose-600/20",
+  } as const;
+  return <button className={cx(base, map[variant], className)} {...props} />;
+}
+
+const inputClass =
+  "w-full rounded-xl border border-zinc-200 bg-white/80 px-3 py-2.5 text-sm shadow-sm font-medium transition-all " +
+  "focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white";
+
 type Employee = {
   id: string;
   employeeCode: string;
@@ -60,6 +166,8 @@ export default function ShiftAssignmentsClient() {
   const [onlyChanged, setOnlyChanged] = useState(true);
   const [onlyActive, setOnlyActive] = useState(true);
   const [showSelectedOnly, setShowSelectedOnly] = useState(false);
+  const [page, setPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(50);
 
   // Auto-hide success/info notice after 3 seconds
   useEffect(() => {
@@ -140,6 +248,11 @@ export default function ShiftAssignmentsClient() {
     }
   }
 
+  // Filters değişince sayfayı 1'e çek
+  useEffect(() => {
+    setPage(1);
+  }, [search, onlyActive, showSelectedOnly, pageSize]);
+
   const filteredEmployees = useMemo(() => {
     const q = search.trim().toLowerCase();
     const base = onlyActive ? employees.filter((e) => e.isActive) : employees;
@@ -152,15 +265,34 @@ export default function ShiftAssignmentsClient() {
     });
   }, [employees, search, onlyActive, showSelectedOnly, selected]);
 
+  const totalCount = useMemo(() => filteredEmployees.length, [filteredEmployees.length]);
+
+  const totalPages = useMemo(() => {
+    const ps = Math.max(1, Number(pageSize) || 50);
+    return Math.max(1, Math.ceil(totalCount / ps));
+  }, [totalCount, pageSize]);
+
+  // Clamp page when totalPages shrinks
+  useEffect(() => {
+    setPage((p) => Math.min(Math.max(1, p), totalPages));
+  }, [totalPages]);
+
+  const pageEmployees = useMemo(() => {
+    const ps = Math.max(1, Number(pageSize) || 50);
+    const p = Math.min(Math.max(1, Number(page) || 1), totalPages);
+    const start = (p - 1) * ps;
+    return filteredEmployees.slice(start, start + ps);
+  }, [filteredEmployees, page, pageSize, totalPages]);
+
   const allVisibleSelected = useMemo(() => {
-    if (filteredEmployees.length === 0) return false;
-    return filteredEmployees.every((e) => selected[e.id]);
-  }, [filteredEmployees, selected]);
+    if (pageEmployees.length === 0) return false;
+    return pageEmployees.every((e) => selected[e.id]);
+  }, [pageEmployees, selected]);
 
   function toggleAllVisible(next: boolean) {
     setSelected((prev) => {
       const copy = { ...prev };
-      for (const e of filteredEmployees) copy[e.id] = next;
+      for (const e of pageEmployees) copy[e.id] = next;
       return copy;
     });
   }
@@ -170,7 +302,7 @@ export default function ShiftAssignmentsClient() {
     // whose weekly plan (week template) is empty for the selected week.
     setSelected((prev) => {
       const next = { ...prev };
-      for (const e of filteredEmployees) {
+      for (const e of pageEmployees) {
         const tplId = weekTemplateByEmployeeId[e.id] ?? null;
         if (!tplId) next[e.id] = true;
       }
@@ -278,7 +410,7 @@ export default function ShiftAssignmentsClient() {
   }
 
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-6 w-full max-w-full overflow-x-hidden p-2 md:p-6 animate-in fade-in duration-500">
       {/* 
         Prevent layout "jump" when the Monday warning appears/disappears.
         Root cause: page height changes -> browser vertical scrollbar toggles -> viewport width changes.
@@ -332,14 +464,45 @@ export default function ShiftAssignmentsClient() {
           </div>
         )}
       </div>
-            {/* Toolbar */}
-      <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+      {/* Header / Toolbar (Employee sayfası stili) */}
+      <Card
+        tone="violet"
+        title={
+          <div className="flex flex-wrap items-center gap-2">
+            <span>Toplu Vardiya</span>
+            <Badge tone="violet">Stage 4 • WEEK_TEMPLATE</Badge>
+            {loading ? <Badge tone="info">Yükleniyor…</Badge> : null}
+            {loadingWeek ? <Badge tone="info">Hafta okunuyor…</Badge> : null}
+          </div>
+        }
+        subtitle={
+          <>
+            Bu ekran sadece <b>WEEK_TEMPLATE</b> (WeeklyShiftPlan.shiftTemplateId) atar.{" "}
+            <b>Day Template</b> / <b>Custom</b> / <b>Manual</b> override'lar <b>asla</b> ezilmez.
+          </>
+        }
+        right={
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={load} disabled={loading} title="Yenile">
+              {loading ? "Yükleniyor…" : "Refresh"}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={selectNoWeekPlansVisible}
+              disabled={loadingWeek || filteredEmployees.length === 0}
+              title={loadingWeek ? "Hafta bilgileri yükleniyor..." : "Görünen listede haftası olmayanları seç"}
+            >
+              Bu haftası olmayanları seç
+            </Button>
+          </div>
+        }
+      >
         <div className="grid gap-4">
           {/* Row 1 */}
-          <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="grid gap-4 md:grid-cols-2 lg:flex lg:items-start lg:justify-between">
             <div className="flex flex-wrap items-start gap-3">
-              <div className="grid gap-1.5">
-                <div className="text-xs text-zinc-500">Hafta (Pzt)</div>
+              <label className="grid gap-1.5">
+                <span className="text-[11px] font-bold text-zinc-400 uppercase ml-1 tracking-wider">Hafta (Pzt)</span>
                 <input
                   type="date"
                   value={weekStartDate}
@@ -348,22 +511,22 @@ export default function ShiftAssignmentsClient() {
                     setError(null);
                     setNotice(null);
                   }}
-                  className="h-10 w-[170px] rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
+                  className={cx(inputClass, "w-[170px]")}
                 />
                 <div
-                  className="mt-1 h-4 text-[11px] leading-4 text-red-700"
+                  className="mt-0.5 h-4 text-[11px] leading-4 text-rose-700 font-semibold"
                   style={{ visibility: isWeekStartMonday ? "hidden" : "visible" }}
                 >
                   Pazartesi seçmelisin
                 </div>
-              </div>
+              </label>
 
-              <div className="grid min-w-[240px] flex-1 gap-1.5">
-                <div className="text-xs text-zinc-500">Week Template</div>
+              <label className="grid gap-1.5 min-w-[240px] flex-1">
+                <span className="text-[11px] font-bold text-zinc-400 uppercase ml-1 tracking-wider">Week Template</span>
                 <select
                   value={shiftTemplateId}
                   onChange={(e) => setShiftTemplateId(e.target.value)}
-                  className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
+                  className={inputClass}
                 >
                   <option value="" disabled>
                     Seç...
@@ -377,90 +540,106 @@ export default function ShiftAssignmentsClient() {
                       </option>
                     ))}
                 </select>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <button
-                onClick={load}
-                disabled={loading}
-                className="h-10 rounded-xl border border-zinc-200 bg-white px-3 text-sm hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
-                title="Yenile"
-              >
-                {loading ? "Loading..." : "Refresh"}
-              </button>
-              <button
-                onClick={selectNoWeekPlansVisible}
-                disabled={loadingWeek || filteredEmployees.length === 0}
-                className="h-10 rounded-xl border border-zinc-200 bg-white px-3 text-sm hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
-                title={loadingWeek ? "Hafta bilgileri yükleniyor..." : "Görünen listede haftası olmayanları seç"}
-              >
-                Bu haftası olmayanları seç
-              </button>
+              </label>
             </div>
           </div>
 
           {/* Row 2 */}
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="grid flex-1 gap-1.5 min-w-[260px]">
-              <div className="text-xs text-zinc-500">Search</div>
+          <div className="grid gap-3 md:grid-cols-2 lg:flex lg:items-end lg:gap-3">
+            <label className="grid flex-1 gap-1.5 min-w-[260px]">
+              <span className="text-[11px] font-bold text-zinc-400 uppercase ml-1 tracking-wider">Arama</span>
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Kod / Ad"
-                className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
+                className={inputClass}
               />
+            </label>
+            
+            <div className="grid gap-1.5">
+              <span className="text-[11px] font-bold text-zinc-400 uppercase ml-1 tracking-wider">Sayfa</span>
+              <select
+                className={cx(inputClass, "w-28")}
+                value={String(pageSize)}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                title="Sayfa boyutu"
+              >
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="200">200</option>
+              </select>
             </div>
 
             <label
-              className="inline-flex h-10 select-none items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-sm text-zinc-700"
+              className="inline-flex select-none items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm font-semibold text-zinc-700 shadow-sm"
               title="Kapalıysa pasif personeller de listede görünür"
             >
               <input
                 type="checkbox"
                 checked={onlyActive}
                 onChange={(e) => setOnlyActive(e.target.checked)}
-                className="h-4 w-4"
+                className="h-4 w-4 rounded-md border-zinc-300 text-indigo-600 focus:ring-indigo-500"
               />
               Sadece aktifleri göster
             </label>
+
+            <div className="lg:ml-auto flex items-center gap-2">
+              <div className="text-sm font-medium text-zinc-500 whitespace-nowrap">
+                {loading ? "Yükleniyor…" : `Toplam: ${totalCount}`}
+              </div>
+            </div>
+
           </div>
         </div>
-      </div>
-
-      <div className="text-sm text-zinc-600">
-        Bu ekran sadece <b>WEEK_TEMPLATE</b> (WeeklyShiftPlan.shiftTemplateId) atar. <b>Day Template</b> /{" "}
-        <b>Custom</b> / <b>Manual</b> override'lar <b>asla</b> ezilmez.
-      </div>
+      </Card>
 
       {/* Table */}
-      <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full border-collapse text-sm">
-            <thead className="bg-zinc-50 text-left text-xs text-zinc-600">
+      <Card
+        tone="neutral"
+        title={
+          <div className="flex flex-wrap items-center gap-2">
+            <span>Personel Listesi</span>
+            <Badge tone="info">{loading ? "Yükleniyor…" : `${filteredEmployees.length} sonuç`}</Badge>
+          </div>
+        }
+        subtitle="Satıra tıklayarak seçim yapın. Checkbox ile de seçebilirsiniz."
+      >
+        <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white">
+          <table className="min-w-[920px] w-full text-sm">
+            <thead className="bg-zinc-50 text-zinc-700">
               <tr>
-                <th className="w-12 px-4 py-3">
+                <th className="w-12 px-4 py-4 text-center">
                   <input
                     type="checkbox"
                     checked={allVisibleSelected}
                     onChange={(e) => toggleAllVisible(e.target.checked)}
-                    className="h-4 w-4"
+                    className="rounded-md border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+                    title="Görünenlerin tümünü seç/kaldır"
                   />
                 </th>
-                <th className="px-4 py-3">Code</th>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Mevcut Week</th>
-                <th className="px-4 py-3">Status</th>
+                <th className="w-[160px] px-4 py-4 text-left font-bold text-zinc-500 uppercase text-[11px] tracking-widest">
+                  Code
+                </th>
+                <th className="px-4 py-4 text-left font-bold text-zinc-500 uppercase text-[11px] tracking-widest">
+                  Name
+                </th>
+                <th className="px-4 py-4 text-left font-bold text-zinc-500 uppercase text-[11px] tracking-widest">
+                  Mevcut Week
+                </th>
+                <th className="w-[140px] px-4 py-4 text-center font-bold text-zinc-500 uppercase text-[11px] tracking-widest">
+                  Status
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
-              {filteredEmployees.map((e) => (
+              {pageEmployees.map((e) => (
                 <tr
                   key={e.id}
-                  className={
-                    (selected[e.id] ? "bg-zinc-50" : "bg-white") +
-                    " cursor-pointer hover:bg-zinc-50/70"
-                  }
+                  className={cx(
+                    "group cursor-pointer hover:bg-zinc-50/70 transition-colors",
+                    selected[e.id] ? "bg-zinc-50" : "bg-white"
+                  )}
                   tabIndex={0}
                   title="Satıra tıklayarak seçimi aç/kapat"
                   onClick={(ev) => {
@@ -475,7 +654,7 @@ export default function ShiftAssignmentsClient() {
                     }
                   }}
                 >
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 text-center align-middle">
                     <input
                       type="checkbox"
                       checked={!!selected[e.id]}
@@ -485,11 +664,13 @@ export default function ShiftAssignmentsClient() {
                           [e.id]: ev.target.checked,
                         }))
                       }
-                      className="h-4 w-4"
+                      className="rounded-md border-zinc-300 text-indigo-600 focus:ring-indigo-500"
                     />
                   </td>
-                  <td className="px-4 py-3 font-mono">{e.employeeCode}</td>
-                  <td className="px-4 py-3">{nameOf(e)}</td>
+                  <td className="px-4 py-3 font-mono font-bold text-zinc-700">{e.employeeCode}</td>
+                  <td className="px-4 py-3">
+                    <span className="font-semibold text-zinc-900">{nameOf(e)}</span>
+                  </td>
                   <td className="px-4 py-3">
                     {loadingWeek ? (
                       <span className="text-zinc-500">...</span>
@@ -501,39 +682,26 @@ export default function ShiftAssignmentsClient() {
                         (templateLabelById[tplId] ?? tplId);
                       const active = weekTemplateActiveByEmployeeId[e.id];
                       return (
-                        <span className="inline-flex items-center gap-2">
+                        <span className="inline-flex items-center gap-2 min-w-0">
                           <span
                             title={label}
-                            className="inline-block max-w-[360px] truncate rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-xs text-zinc-700"
+                            className="inline-block max-w-[420px] truncate rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-xs font-semibold text-zinc-700"
                           >
                             {label}
                           </span>
-                          {active === false ? (
-                            <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[11px] font-semibold text-zinc-600">
-                              Pasif
-                            </span>
-                          ) : null}
+                          {active === false ? <Badge tone="warn">Pasif</Badge> : null}
                         </span>
                       );
                     })()}
                   </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={
-                        e.isActive
-                          ? "inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-800"
-                          : "inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-0.5 text-xs font-semibold text-zinc-600"
-                      }
-                      title={e.isActive ? "Personel aktif" : "Personel pasif"}
-                    >
-                      {e.isActive ? "Active" : "Inactive"}
-                    </span>
+                  <td className="px-4 py-3 text-center">
+                    <Badge tone={e.isActive ? "good" : "neutral"}>{e.isActive ? "Active" : "Inactive"}</Badge>
                   </td>
                 </tr>
               ))}
-              {filteredEmployees.length === 0 && (
+              {pageEmployees.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-6 text-zinc-500">
+                  <td colSpan={5} className="px-4 py-8 text-zinc-600">
                     Kayıt yok.
                   </td>
                 </tr>
@@ -541,40 +709,74 @@ export default function ShiftAssignmentsClient() {
             </tbody>
           </table>
         </div>
-      </div>
+
+        {/* Pagination */}
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="text-sm text-zinc-600">
+            Sayfa <span className="font-medium text-zinc-900">{page}</span> /{" "}
+            <span className="font-medium text-zinc-900">{totalPages}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              disabled={loading || page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              ← Önceki
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={loading || page >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            >
+              Sonraki →
+            </Button>
+          </div>
+        </div>
+      </Card>
 
       {/* Bottom action bar */}
-      <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+      <Card
+        tone="neutral"
+        title={
+          <div className="flex flex-wrap items-center gap-2">
+            <span>İşlem</span>
+            <Badge tone={canSubmit ? "good" : "warn"}>{canSubmit ? "Hazır" : "Eksik bilgi"}</Badge>
+          </div>
+        }
+        subtitle="Seçili personele haftalık atamayı uygular. Günlük override'lar etkilenmez."
+      >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            <button
+            <Button
+              variant="primary"
               onClick={submit}
               disabled={!canSubmit}
-              className="h-10 rounded-xl border border-zinc-900 bg-zinc-900 px-4 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
-              title={!canSubmit ? "Seçim ve haftanın Pazartesi olması gerekli" : "Seçili personele haftalık atamayı uygula"}
+              title={!canSubmit ? "Seçim + Pazartesi + template gerekli" : "Seçili personele haftalık atamayı uygula"}
+              className="min-w-[140px]"
             >
               {submitting ? "Applying..." : `Uygula (${selectedIds.length})`}
-            </button>
+            </Button>
 
-            <button
+            <Button
+              variant="secondary"
               type="button"
               onClick={() => setSelected({})}
               disabled={submitting || selectedIds.length === 0}
-              className="h-10 rounded-xl border border-zinc-200 bg-white px-4 text-sm hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
               title={selectedIds.length === 0 ? "Seçili personel yok" : "Tüm seçimleri kaldır"}
             >
               Seçimi temizle
-            </button>
+            </Button>
 
             <label
-              className="inline-flex h-10 select-none items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-sm text-zinc-700"
+              className="inline-flex select-none items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm font-semibold text-zinc-700 shadow-sm"
               title="Aynı template olanlara yazmaz (idempotent)."
             >
               <input
                 type="checkbox"
                 checked={onlyChanged}
                 onChange={(e) => setOnlyChanged(e.target.checked)}
-                className="h-4 w-4"
+                className="h-4 w-4 rounded-md border-zinc-300 text-indigo-600 focus:ring-indigo-500"
               />
               Sadece değişecekleri uygula
             </label>
@@ -588,13 +790,13 @@ export default function ShiftAssignmentsClient() {
                 setShowSelectedOnly((v) => !v);
               }}
               disabled={selectedIds.length === 0}
-              className={
-                "h-9 rounded-full border px-3 text-xs font-semibold " +
-                (showSelectedOnly
+              className={cx(
+                "h-9 rounded-full border px-3 text-xs font-semibold transition",
+                showSelectedOnly
                   ? "border-zinc-900 bg-zinc-900 text-white"
-                  : "border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100") +
-                " disabled:cursor-not-allowed disabled:opacity-60"
-              }
+                  : "border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100",
+                "disabled:cursor-not-allowed disabled:opacity-60"
+              )}
               title={
                 selectedIds.length === 0
                   ? "Seçili personel yok"
@@ -625,7 +827,7 @@ export default function ShiftAssignmentsClient() {
         <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
           Not: Bu işlem günlük override'ları etkilemez. (Day Template / Custom / Manual her zaman üst katmandır.)
         </div>
-      </div>  
+      </Card>  
     </div>
   );
 }

@@ -14,6 +14,10 @@ function anomalyDetail(code: string): string {
       return "Arka arkaya OUT (önceki OUT’tan sonra tekrar OUT)";
     case "ORPHAN_OUT":
       return "Yetim OUT (öncesinde kabul edilmiş IN yok)";
+    case "UNSCHEDULED_WORK":
+      return "Vardiya dışı fiili çalışma (planlanan vardiya ile uyuşmuyor)";
+    case "OUTSIDE_SHIFT_IGNORED":
+      return "Vardiya penceresi dışında punch (CLAMP: worked'e dahil edilmedi)";
     case "DUPLICATE_PUNCH":
       return "Duplicate punch";
     case "DUPLICATE_EVENT":

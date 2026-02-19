@@ -4,10 +4,11 @@ import {
   getDailyAdjustmentForEmployeeOnDate,
   upsertDailyAdjustmentForEmployeeOnDate,
   deleteDailyAdjustmentForEmployeeOnDate,
+  EmploymentNotEmployedError,
 } from "@/src/services/dailyAdjustment.service";
 
 function requireAdminOrHr(role: string) {
-  return role === "ADMIN" || role === "HR";
+  return role === "SYSTEM_ADMIN" || role === "HR_OPERATOR";
 }
 
 function parseDateParam(req: Request) {
@@ -81,8 +82,15 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   if (hasOverride && noteEmpty) {
     return NextResponse.json({ error: "NOTE_REQUIRED" }, { status: 400 });
   }
-  const item = await upsertDailyAdjustmentForEmployeeOnDate(id, date, body);
-  return NextResponse.json({ ok: true, item });
+  try {
+    const item = await upsertDailyAdjustmentForEmployeeOnDate(id, date, body);
+    return NextResponse.json({ ok: true, item });
+  } catch (e: any) {
+    if (e instanceof EmploymentNotEmployedError) {
+      return NextResponse.json({ error: e.code, message: e.message, meta: e.meta ?? null }, { status: 400 });
+    }
+    throw e;
+  }
 }
 
 // DELETE /api/employees/[id]/daily-adjustment?date=YYYY-MM-DD
@@ -98,6 +106,13 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
   if (!id) return NextResponse.json({ error: "BAD_ID" }, { status: 400 });
   if (!date) return NextResponse.json({ error: "INVALID_DATE" }, { status: 400 });
 
-  await deleteDailyAdjustmentForEmployeeOnDate(id, date);
-  return NextResponse.json({ ok: true });
+  try {
+    await deleteDailyAdjustmentForEmployeeOnDate(id, date);
+    return NextResponse.json({ ok: true });
+  } catch (e: any) {
+    if (e instanceof EmploymentNotEmployedError) {
+      return NextResponse.json({ error: e.code, message: e.message, meta: e.meta ?? null }, { status: 400 });
+    }
+    throw e;
+  }
 }

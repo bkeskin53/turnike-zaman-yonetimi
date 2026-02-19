@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 
 type ShiftTemplate = {
@@ -11,6 +12,144 @@ type ShiftTemplate = {
   isActive: boolean;
   createdAt: string;
 };
+
+type Tone = "neutral" | "info" | "good" | "warn" | "danger" | "violet";
+
+function cx(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(" ");
+}
+
+function Badge({
+  tone = "neutral",
+  children,
+  className,
+}: {
+  tone?: Tone;
+  children: ReactNode;
+  className?: string;
+}) {
+  const map: Record<Tone, string> = {
+    neutral: "bg-zinc-100 text-zinc-800 ring-zinc-200",
+    info: "bg-sky-50 text-sky-800 ring-sky-200",
+    good: "bg-emerald-50 text-emerald-800 ring-emerald-200",
+    warn: "bg-amber-50 text-amber-900 ring-amber-200",
+    danger: "bg-rose-50 text-rose-800 ring-rose-200",
+    violet: "bg-violet-50 text-violet-800 ring-violet-200",
+  };
+  return (
+    <span
+      className={cx(
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset",
+        map[tone],
+        className
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+function IconChip({
+  tone = "neutral",
+  icon,
+  children,
+  className,
+}: {
+  tone?: Tone;
+  icon: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  const map: Record<Tone, string> = {
+    neutral: "bg-zinc-100 text-zinc-800 ring-zinc-200",
+    info: "bg-sky-50 text-sky-800 ring-sky-200",
+    good: "bg-emerald-50 text-emerald-800 ring-emerald-200",
+    warn: "bg-amber-50 text-amber-900 ring-amber-200",
+    danger: "bg-rose-50 text-rose-800 ring-rose-200",
+    violet: "bg-violet-50 text-violet-800 ring-violet-200",
+  };
+  return (
+    <span
+      className={cx(
+        "inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset",
+        map[tone],
+        className
+      )}
+    >
+      <span className="grid place-items-center rounded-full bg-white/60 ring-1 ring-inset ring-black/5 w-5 h-5">
+        {icon}
+      </span>
+      <span>{children}</span>
+    </span>
+  );
+}
+
+function Card({
+  tone = "neutral",
+  title,
+  subtitle,
+  right,
+  children,
+  className,
+}: {
+  tone?: Tone;
+  title?: ReactNode;
+  subtitle?: ReactNode;
+  right?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  const toneBg: Record<Tone, string> = {
+    neutral: "from-zinc-50 to-white",
+    info: "from-sky-50 to-white",
+    good: "from-emerald-50 to-white",
+    warn: "from-amber-50 to-white",
+    danger: "from-rose-50 to-white",
+    violet: "from-violet-50 to-white",
+  };
+  return (
+    <div
+      className={cx(
+        "rounded-2xl border border-zinc-200/70 bg-gradient-to-b p-4 shadow-sm min-w-0",
+        "hover:shadow-md transition-shadow",
+        toneBg[tone],
+        className
+      )}
+    >
+      {(title || subtitle || right) ? (
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            {title ? <div className="text-sm font-semibold text-zinc-900 leading-5">{title}</div> : null}
+            {subtitle ? <div className="mt-1 text-xs text-zinc-600 leading-5">{subtitle}</div> : null}
+          </div>
+          {right ? <div className="shrink-0">{right}</div> : null}
+        </div>
+      ) : null}
+      {children}
+    </div>
+  );
+}
+
+function Button({
+  variant = "secondary",
+  className,
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "ghost" | "danger" }) {
+  const base =
+    "inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition " +
+    "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed";
+  const map = {
+    primary: "bg-indigo-600 text-white shadow-sm hover:bg-indigo-700 border border-indigo-600/20",
+    secondary: "bg-white text-zinc-900 border border-zinc-200 hover:bg-zinc-50 shadow-sm",
+    ghost: "bg-transparent text-zinc-700 hover:bg-zinc-100 border border-transparent",
+    danger: "bg-rose-600 text-white shadow-sm hover:bg-rose-700 border border-rose-600/20",
+  } as const;
+  return <button className={cx(base, map[variant], className)} {...props} />;
+}
+
+const inputClass =
+  "w-full rounded-xl border border-zinc-200 bg-white/80 px-3 py-2 text-sm shadow-sm " +
+  "focus:outline-none focus:ring-2 focus:ring-indigo-500";
 
 function isValidTimeHHmm(v: string) {
   return /^\d{2}:\d{2}$/.test(v);
@@ -76,7 +215,7 @@ export default function ShiftTemplatesClient() {
     // Signature format:
     // - "0900-1800"
     // - If End < Start => spans midnight => "+1" (next day)
-    return "Signature otomatik üretilir (0900-1800). End, Start’tan küçükse gece vardiyası sayılır ve +1 eklenir (2200-0600+1).";
+    return "İmza (signature) otomatik üretilir: 0900-1800. Bitiş saati başlangıçtan küçükse bu bir gece vardiyasıdır ve +1 eklenir: 2200-0600+1.";
   }, []);
 
   const canSubmit = useMemo(() => {
@@ -264,7 +403,7 @@ export default function ShiftTemplatesClient() {
   }
 
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-6 min-w-0 max-w-full overflow-x-clip">
       {deleteConfirm && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
@@ -276,21 +415,18 @@ export default function ShiftTemplatesClient() {
           }}
         >
           <div className="w-full max-w-md rounded-2xl bg-white shadow-lg border border-zinc-200 p-4">
-            <div className="text-lg font-semibold">Template silinsin mi?</div>
+            <div className="text-lg font-semibold">Şablon pasifleştirilsin mi?</div>
             <div className="mt-1 text-sm text-zinc-600">
-              Bu işlem template’i pasif yapar. İstersen daha sonra tekrar Aktifleştir. Seçili template:{" "}
+              Bu işlem şablonu pasif yapar. İstersen daha sonra tekrar <b>Aktifleştir</b>.
+              Seçili şablon:{" "}
               <span className="font-mono font-medium text-zinc-900">{deleteConfirm.signature}</span>
             </div>
             <div className="mt-4 flex justify-end gap-2">
-              <button
-                className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm hover:bg-zinc-50"
-                onClick={() => setDeleteConfirm(null)}
-                disabled={loading}
-              >
-                Vazgeç
-              </button>
-              <button
-                className="rounded-xl border border-red-200 bg-red-600 px-3 py-2 text-sm text-white hover:bg-red-500 disabled:opacity-50"
+              <Button variant="secondary" onClick={() => setDeleteConfirm(null)} disabled={loading}>
+                İptal
+              </Button>
+              <Button
+                variant="danger"
                 onClick={async () => {
                   const id = deleteConfirm.id;
                   setDeleteConfirm(null);
@@ -299,39 +435,55 @@ export default function ShiftTemplatesClient() {
                 disabled={loading}
               >
                 Pasifleştir
-              </button>
+              </Button>
             </div>
           </div>
         </div>
       )}
-      <div className="rounded-2xl bg-white shadow-sm border border-zinc-200 p-4">
-        <div className="flex items-center justify-between gap-4">
-          <div className="grid gap-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="text-lg font-semibold">Template Yönetimi</div>
-              {form.mode === "edit" && editingSignature && (
-                <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
-                  Düzenleniyor: <span className="font-mono">{editingSignature}</span>
-                </span>
-              )}
-            </div>
-            <div className="text-sm text-zinc-600">
-              Signature otomatik türetilir: <code>HHmm-HHmm(+1)</code>
-            </div>
-            <div className="text-xs text-zinc-500">
-              {helpText}
-            </div>
+      <Card
+        tone="info"
+        title={
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-base font-semibold">Vardiya Şablonları</span>
+            <Badge tone="info">Saat aralığı → otomatik imza</Badge>
+            {form.mode === "edit" && editingSignature ? (
+              <Badge tone="warn">
+                Düzenleniyor: <span className="font-mono">{editingSignature}</span>
+              </Badge>
+            ) : null}
           </div>
-          <button
-            className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm hover:bg-zinc-50"
+        }
+        subtitle={
+          <div className="space-y-2">
+            <div className="text-xs text-zinc-600">
+              Bu ekran, vardiyanın <b>başlangıç</b> ve <b>bitiş</b> saatine göre şablon üretir. Sistem otomatik olarak imza (signature) oluşturur.
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <IconChip tone="info" icon={<span className="text-[12px]">🧾</span>}>
+                İmza: <span className="font-mono">HHmm-HHmm(+1)</span>
+              </IconChip>
+              <IconChip tone="good" icon={<span className="text-[12px]">🌙</span>}>
+                Gece vardiyası: bitiş &lt; başlangıç → <b>+1</b>
+              </IconChip>
+              <IconChip tone="neutral" icon={<span className="text-[12px]">🔎</span>}>
+                Altta arayabilir & sıralayabilirsin
+              </IconChip>
+            </div>
+            <div className="text-[11px] text-zinc-600">{helpText}</div>
+          </div>
+        }
+        right={
+          <Button
+            variant="secondary"
             onClick={() => {
               resetForm();
               setError(null);
             }}
           >
             Yeni
-          </button>
-        </div>
+          </Button>
+        }
+      >
 
         {error && (
           <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -377,11 +529,12 @@ export default function ShiftTemplatesClient() {
           </div>
         )}
 
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <div className="mt-4 grid gap-3 lg:grid-cols-3">
           <label className="grid gap-1">
-            <span className="text-sm text-zinc-700">Start</span>
+            <span className="text-sm font-medium text-zinc-800">Başlangıç</span>
             <input
-              className="rounded-xl border border-zinc-200 px-3 py-2 text-sm"
+              type="time"
+              className={inputClass}
               value={form.startTime}
               onChange={(e) =>
                 setForm((s) => ({ ...s, startTime: normalizeTimeHHmm(e.target.value) }))
@@ -390,10 +543,10 @@ export default function ShiftTemplatesClient() {
             />
           </label>
           <label className="grid gap-1">
-            <span className="text-sm text-zinc-700">End</span>
+            <span className="text-sm font-medium text-zinc-800">Bitiş</span>
             <input
               type="time"
-              className="rounded-xl border border-zinc-200 px-3 py-2 text-sm"
+              className={inputClass}
               value={form.endTime}
               onChange={(e) =>
                 setForm((s) => ({ ...s, endTime: normalizeTimeHHmm(e.target.value) }))
@@ -402,67 +555,61 @@ export default function ShiftTemplatesClient() {
             />
           </label>
           <div className="flex items-end gap-2">
-            <button
-              className="w-full rounded-xl bg-zinc-900 px-3 py-2 text-sm text-white hover:bg-zinc-800 disabled:opacity-50"
+            <Button
+              className="w-full"
+              variant="primary"
               onClick={onSubmit}
               disabled={loading || !canSubmit || !!preview?.invalidReason || (form.mode === "edit" && !isDirty)}
             >
               {form.mode === "create" ? "Oluştur" : "Güncelle"}
-            </button>
+            </Button>
             {form.mode === "edit" && (
-              <button
-                className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm hover:bg-zinc-50"
-                onClick={resetForm}
-              >
-                İptal
-              </button>
+              <Button variant="secondary" onClick={resetForm}>İptal</Button>
             )}
           </div>
         </div>
-      </div>
+      </Card>
 
-      <div className="rounded-2xl bg-white shadow-sm border border-zinc-200">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-200">
+      <Card
+        tone="neutral"
+        className="p-0"
+        title="Mevcut Şablonlar"
+        subtitle="Arayabilir, sıralayabilir, düzenleyebilir veya pasifleştirebilirsin."
+        right={
+          <Badge tone="neutral">
+            {visibleItems.length}{q.trim() ? ` / ${items.length}` : ""} kayıt
+          </Badge>
+        }
+      >
+        <div className="px-4 py-3 border-b border-zinc-200 min-w-0 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="grid gap-2">
-            <div className="text-sm font-medium">
-              Templates ({visibleItems.length}
-              {q.trim() ? ` / ${items.length}` : ""})
-            </div>
             <div className="flex flex-wrap items-center gap-2">
               <input
-                className="w-full sm:w-64 rounded-xl border border-zinc-200 px-3 py-2 text-sm"
-                placeholder="Ara: signature / start / end"
+                className={cx("w-full sm:w-64", inputClass)}
+                placeholder="Ara: imza / başlangıç / bitiş"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
               />
               <select
-                className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
+                className={cx("w-full sm:w-auto min-w-0", inputClass)}
                 value={sort}
                 onChange={(e) => setSort(e.target.value as any)}
               >
-                <option value="signature">Sırala: Signature</option>
-                <option value="startTime">Sırala: Start</option>
+                <option value="signature">Sırala: İmza</option>
+                <option value="startTime">Sırala: Başlangıç</option>
                 <option value="createdAt">Sırala: En Yeni</option>
               </select>
               {q.trim() && (
-                <button
-                  className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm hover:bg-zinc-50"
-                  onClick={() => setQ("")}
-                 disabled={loading}
-                >
+                <Button variant="secondary" onClick={() => setQ("")} disabled={loading}>
                   Temizle
-                </button>
+                </Button>
               )}
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm hover:bg-zinc-50"
-              onClick={load}
-              disabled={loading}
-            >
+            <Button variant="secondary" onClick={load} disabled={loading}>
               Yenile
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -480,21 +627,17 @@ export default function ShiftTemplatesClient() {
                    (isEditingRow ? "border-amber-300 bg-amber-50/60" : "border-zinc-200")
                   }
                 >
-                  <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <div className="font-mono text-sm font-semibold text-zinc-900">
                           {it.signature}
                         </div>
                         {!it.isActive ? (
-                          <span className="ml-2 inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[11px] font-medium text-zinc-700">
-                            Pasif
-                          </span>
+                          <Badge tone="neutral" className="ml-2">Pasif</Badge>
                         ) : null}
                         {it.spansMidnight ? (
-                          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800">
-                            +1
-                          </span>
+                          <Badge tone="good">+1</Badge>
                         ) : null}
                       </div>
                       <div className="mt-1 text-xs text-zinc-600">
@@ -505,20 +648,17 @@ export default function ShiftTemplatesClient() {
                         <span className="font-medium">{mins == null ? "—" : formatDuration(mins)}</span>
                       </div>
                     </div>
-                    <div className="shrink-0 flex items-center gap-2">
+                    <div className="shrink-0 flex flex-wrap justify-end gap-2">
                       {
                         !it.isActive ? (
-                          <button
-                            className="rounded-xl border border-emerald-200 bg-white px-3 py-1.5 text-sm text-emerald-700 hover:bg-emerald-50"
-                            onClick={() => onActivate(it.id)}
-                            disabled={loading}
-                          >
+                          <Button variant="secondary" onClick={() => onActivate(it.id)} disabled={loading}>
                             Aktifleştir
-                          </button>
+                          </Button>
                         ) : null
                       }
-                      <button
-                        className="rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50"
+                      <Button
+                        variant="secondary"
+                        className="px-3 py-1.5"
                         onClick={() => {
                           setError(null);
                           setForm({
@@ -535,10 +675,11 @@ export default function ShiftTemplatesClient() {
                         }}
                       >
                         Düzenle
-                      </button>
-                      <button
-                        className="rounded-xl border border-red-200 bg-white px-3 py-1.5 text-sm text-red-700 hover:bg-red-50"
-                        onClick={() =>
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        className="px-3 py-1.5 text-red-700 border-red-200 hover:bg-red-50"
+                          onClick={() =>
                           setDeleteConfirm({
                             id: it.id,
                             signature: it.signature,
@@ -547,7 +688,7 @@ export default function ShiftTemplatesClient() {
                         disabled={loading}
                       >
                         Pasifleştir
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -556,7 +697,7 @@ export default function ShiftTemplatesClient() {
 
             {visibleItems.length === 0 && (
               <div className="rounded-2xl border border-zinc-200 bg-white p-4 text-sm text-zinc-600">
-                {items.length === 0 ? "Henüz template yok." : "Aramanla eşleşen template bulunamadı."}
+                {items.length === 0 ? "Henüz şablon yok." : "Aramanla eşleşen şablon bulunamadı."}
               </div>
             )}
           </div>
@@ -567,15 +708,15 @@ export default function ShiftTemplatesClient() {
           <table className="w-full text-sm">
             <thead className="bg-zinc-50 text-zinc-700">
               <tr>
-                <th className="text-left px-4 py-3">Signature</th>
-                <th className="text-left px-4 py-3">Start</th>
-                <th className="text-left px-4 py-3">End</th>
+                <th className="text-left px-4 py-3">İmza</th>
+                <th className="text-left px-4 py-3">Başlangıç</th>
+                <th className="text-left px-4 py-3">Bitiş</th>
                 <th className="text-left px-4 py-3">Süre</th>
                 <th className="text-left px-4 py-3">
                   <div className="leading-tight">+1</div>
                   <div className="text-[11px] font-normal text-zinc-500">Gece</div>
                 </th>
-                <th className="text-right px-4 py-3">Actions</th>
+                <th className="text-right px-4 py-3">İşlemler</th>
               </tr>
             </thead>
            <tbody className="divide-y divide-zinc-100">
@@ -600,14 +741,10 @@ export default function ShiftTemplatesClient() {
                     <div className="flex items-center gap-2">
                       <span>{it.signature}</span>
                       {!it.isActive ? (
-                        <span className="inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[11px] font-medium text-zinc-700">
-                          Pasif
-                        </span>
+                        <Badge tone="neutral">Pasif</Badge>
                       ) : null}
                       {it.spansMidnight ? (
-                        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
-                          +1
-                        </span>
+                        <Badge tone="good">+1</Badge>
                       ) : null}
                     </div>
                   </td>
@@ -623,17 +760,14 @@ export default function ShiftTemplatesClient() {
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
                       {!it.isActive ? (
-                        <button
-                          className="rounded-xl border border-emerald-200 bg-white px-3 py-1.5 text-sm text-emerald-700 hover:bg-emerald-50"
-                          onClick={() => onActivate(it.id)}
-                          disabled={loading}
-                        >
+                        <Button variant="secondary" onClick={() => onActivate(it.id)} disabled={loading}>
                           Aktifleştir
-                        </button>
+                        </Button>
                       ) : (
                         <>
-                          <button
-                            className="rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50"
+                          <Button
+                            variant="secondary"
+                            className="px-3 py-1.5"
                             onClick={() => {
                               setError(null);
                               setForm({
@@ -651,9 +785,10 @@ export default function ShiftTemplatesClient() {
                             disabled={loading}
                           >
                             Düzenle
-                          </button>
-                          <button
-                            className="rounded-xl border border-red-200 bg-white px-3 py-1.5 text-sm text-red-700 hover:bg-red-50"
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            className="px-3 py-1.5 text-red-700 border-red-200 hover:bg-red-50"
                             onClick={() =>
                               setDeleteConfirm({
                                 id: it.id,
@@ -663,7 +798,7 @@ export default function ShiftTemplatesClient() {
                             disabled={loading}
                           >
                             Pasifleştir
-                          </button>
+                          </Button>
                         </>
                       )}
                     </div>
@@ -675,14 +810,14 @@ export default function ShiftTemplatesClient() {
              {visibleItems.length === 0 && (
                 <tr>
                   <td className="px-4 py-6 text-zinc-600" colSpan={6}>
-                    {items.length === 0 ? "Henüz template yok." : "Aramanla eşleşen template bulunamadı."}
+                    {items.length === 0 ? "Henüz şablon yok." : "Aramanla eşleşen şablon bulunamadı."}
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

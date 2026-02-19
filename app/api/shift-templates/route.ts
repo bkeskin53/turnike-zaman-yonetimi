@@ -6,7 +6,7 @@ import { listShiftTemplates, listAllShiftTemplates, createShiftTemplateForCompan
 
 export async function GET(req: NextRequest) {
    try {
-     await requireRole(["ADMIN", "HR"]);
+     await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN"]);
      const companyId = await getActiveCompanyId();
      const includeInactive =
        String(req.nextUrl.searchParams.get("includeInactive") ?? "").trim() === "1";
@@ -26,13 +26,14 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: Request) {
   try {
-    await requireRole(["ADMIN", "HR"]);
+    await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN"]);
     const companyId = await getActiveCompanyId();
     const body: any = await req.json().catch(() => ({}));
 
     const startTime = String(body?.startTime ?? "");
     const endTime = String(body?.endTime ?? "");
-    const created = await createShiftTemplateForCompany(companyId, { startTime, endTime });
+    const shiftCode = body?.shiftCode ? String(body.shiftCode) : undefined;
+    const created = await createShiftTemplateForCompany(companyId, { startTime, endTime, shiftCode });
     return NextResponse.json({ item: created });
   } catch (e: any) {
     const msg = typeof e?.message === "string" ? e.message : "";

@@ -6,7 +6,7 @@ import IntegrationDashboardClient from "./ui";
 export default async function IntegrationPage(props: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requireRole(["ADMIN", "HR"]);
+  await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR"]);
 
   const sp = (await props.searchParams) ?? {};
   const hours = Array.isArray(sp.hours) ? sp.hours[0] : sp.hours;

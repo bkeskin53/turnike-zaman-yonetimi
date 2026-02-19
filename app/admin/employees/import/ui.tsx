@@ -7,18 +7,27 @@ type ToastState = { kind: ToastKind; message: string } | null;
 
 type ImportIssue = {
   line: number;
+  employeeCode?: string;
   code: string;
   message: string;
   field?: string;
   value?: string;
 };
 
+function issuePrimaryId(issue: ImportIssue): string {
+  const code = String(issue.employeeCode ?? "").trim();
+  if (code) return code;
+  // employeeCode yoksa satırı fallback gösteriyoruz (yine de boş bırakmayalım)
+  if (issue.line && issue.line > 0) return `Satır ${issue.line}`;
+  return "—";
+}
+
 type ImportChange = {
   employeeCode: string;
   action: "CREATE" | "UPDATE" | "SKIP";
   changedFields?: string[];
-  before?: { firstName: string; lastName: string; email: string | null; isActive: boolean };
-  after?: { firstName: string; lastName: string; email: string | null; isActive: boolean };
+  before?: { firstName: string; lastName: string; email: string | null; isActive: boolean; branchCode: string | null; hireDate: string | null; terminationDate: string | null };
+  after?: { firstName: string; lastName: string; email: string | null; isActive: boolean; branchCode: string | null; hireDate: string | null; terminationDate: string | null };
 };
 
 type ImportResult = {
@@ -76,6 +85,10 @@ type ImportMapping = {
     lastName: string | number;
     email?: string | number;
     isActive?: string | number;
+    branchCode?: string | number;
+    hireDate?: string | number;
+    terminationDate?: string | number;
+    employmentAction?: string | number;
   };
 };
 
@@ -126,17 +139,19 @@ function splitLineClient(line: string, delimiter: "," | ";" | "\t"): string[] {
 
 function sampleCsvComma() {
   return [
-    "employeeCode,firstName,lastName,email,isActive",
-    "E001,Burak,Keskin,,true",
-    "E002,Aylin,Yılmaz,aylin@firma.com,true",
+    "employeeCode,firstName,lastName,email,isActive,branchCode,hireDate,terminationDate,employmentAction",
+    "E001,Burak,Keskin,,true,IST,2026-01-10,,",
+    "E002,Aylin,Yılmaz,aylin@firma.com,true,ANK,2026-01-12,2026-02-01,",
+    "E003,Mehmet,Demir,,true,IST,2026-01-20,,REHIRE",
   ].join("\n");
 }
 
 function sampleCsvSemi() {
   return [
-    "employeeCode;firstName;lastName;email;isActive",
-    "E001;Burak;Keskin;;true",
-    "E002;Aylin;Yılmaz;aylin@firma.com;true",
+    "employeeCode;firstName;lastName;email;isActive;branchCode;hireDate;terminationDate;employmentAction",
+    "E001;Burak;Keskin;;true;IST;2026-01-10;;",
+    "E002;Aylin;Yılmaz;aylin@firma.com;true;ANK;2026-01-12;2026-02-01;",
+    "E003;Mehmet;Demir;;true;IST;2026-01-20;;REHIRE",
   ].join("\n");
 }
 
@@ -222,7 +237,7 @@ export default function EmployeesImportClient() {
     if (!preview) {
       return {
         mode: "INDEX",
-        columns: { employeeCode: 0, firstName: 1, lastName: 2, email: 3, isActive: 4 },
+        columns: { employeeCode: 0, firstName: 1, lastName: 2, email: 3, isActive: 4, branchCode: -1, hireDate: -1, terminationDate: -1, employmentAction: -1 },
       };
     }
 
@@ -247,6 +262,22 @@ export default function EmployeesImportClient() {
       const email = findHeader(/^(email|mail|eposta)$/) || findHeader(/(email|mail|eposta)/);
       const isActive = findHeader(/^(isactive|aktif|durum|status|ap)$/) || findHeader(/(aktif|durum|status|ap)/);
 
+      const branchCode =
+        findHeader(/^(branchcode|branch|sube|subekodu|lokasyon|lokasyonkodu)$/) ||
+        findHeader(/(branchcode|branch|sube|subekodu|lokasyon|lokasyonkodu)/);
+
+      const hireDate =
+        findHeader(/^(hiredate|isegiristarihi|isegiris|giris|startdate|baslangictarihi)$/) ||
+        findHeader(/(hiredate|isegir|startdate|baslangic)/);
+
+      const terminationDate =
+        findHeader(/^(terminationdate|cikistarihi|istenayrilistarihi|ayrilis|enddate|bitistarihi)$/) ||
+        findHeader(/(terminationdate|cikis|ayrilis|enddate|bitis)/);
+
+      const employmentAction =
+        findHeader(/^(employmentaction|employment_action|action|hareket|islem)$/) ||
+        findHeader(/(employmentaction|employment_action|action|hareket|islem|rehire)/);
+        
       return {
         mode: "HEADER",
         columns: {
@@ -255,6 +286,10 @@ export default function EmployeesImportClient() {
           lastName: lastName || "",
           email: email || "",
           isActive: isActive || "",
+          branchCode: branchCode || "",
+          hireDate: hireDate || "",
+          terminationDate: terminationDate || "",
+          employmentAction: employmentAction || "",
         },
       };
     }
@@ -262,7 +297,7 @@ export default function EmployeesImportClient() {
     // No header -> INDEX is more stable.
     return {
       mode: "INDEX",
-      columns: { employeeCode: 0, firstName: 1, lastName: 2, email: 3, isActive: 4 },
+      columns: { employeeCode: 0, firstName: 1, lastName: 2, email: 3, isActive: 4, branchCode: -1, hireDate: -1, terminationDate: -1, employmentAction: -1 },
     };
   }
 
@@ -297,7 +332,7 @@ export default function EmployeesImportClient() {
       // Best-effort: default to index mapping
       setDraftMapping({
         mode: "INDEX",
-        columns: { employeeCode: 0, firstName: 1, lastName: 2, email: 3, isActive: 4 },
+        columns: { employeeCode: 0, firstName: 1, lastName: 2, email: 3, isActive: 4, branchCode: -1, hireDate: -1, terminationDate: -1, employmentAction: -1 },
       });
     }
   }, [profile, preview, draftMapping]);
@@ -497,13 +532,17 @@ export default function EmployeesImportClient() {
               rows={14}
               spellCheck={false}
               className="w-full resize-y rounded-xl border border-zinc-200 bg-white p-3 font-mono text-xs leading-5 outline-none focus:border-zinc-400"
-              placeholder="employeeCode,firstName,lastName,email,isActive"
+              placeholder="employeeCode,firstName,lastName,email,isActive,branchCode,hireDate,terminationDate,employmentAction"
             />
             <div className="mt-2 text-xs text-zinc-500">
               Zorunlu sütunlar: <span className="font-mono">employeeCode</span>,{" "}
               <span className="font-mono">firstName</span>, <span className="font-mono">lastName</span>
               . Opsiyonel: <span className="font-mono">email</span>,{" "}
-              <span className="font-mono">isActive</span>.
+              <span className="font-mono">isActive</span>,{" "}
+              <span className="font-mono">branchCode</span>,{" "}
+              <span className="font-mono">hireDate</span>,{" "}
+              <span className="font-mono">terminationDate</span>,{" "}
+              <span className="font-mono">employmentAction</span>.
             </div>
           </div>
 
@@ -512,7 +551,7 @@ export default function EmployeesImportClient() {
             <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-zinc-700">
               <li>
                 Header varsa otomatik algılanır. Header yoksa sıra:{" "}
-                <span className="font-mono">employeeCode, firstName, lastName, email, isActive</span>
+                <span className="font-mono">employeeCode, firstName, lastName, email, isActive, branchCode, hireDate, terminationDate, employmentAction</span>
               </li>
               <li>
                 Ayırıcı: <span className="font-mono">,</span> veya <span className="font-mono">;</span> veya{" "}
@@ -533,7 +572,7 @@ export default function EmployeesImportClient() {
             <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-2">
               <div className="text-xs font-semibold text-zinc-800">Örnek satır</div>
               <div className="mt-1 font-mono text-[11px] text-zinc-700">
-                E001,Burak,Keskin,,true
+                E001,Ad,Soyad,,true,IST,2025-01-10,
               </div>
             </div>
           </div>
@@ -748,6 +787,46 @@ export default function EmployeesImportClient() {
                   setDraftMapping((m) => (m ? { ...m, columns: { ...m.columns, isActive: v } } : m))
                 }
               />
+              <MappingRow
+                label="branchCode (opsiyonel)"
+                preview={preview}
+                value={draftMapping?.columns.branchCode ?? -1}
+                mode={draftMapping?.mode ?? "INDEX"}
+                allowNone
+                onChange={(v) =>
+                  setDraftMapping((m) => (m ? { ...m, columns: { ...m.columns, branchCode: v } } : m))
+                }
+              />
+              <MappingRow
+                label="hireDate (opsiyonel)"
+                preview={preview}
+                value={draftMapping?.columns.hireDate ?? -1}
+                mode={draftMapping?.mode ?? "INDEX"}
+                allowNone
+                onChange={(v) =>
+                  setDraftMapping((m) => (m ? { ...m, columns: { ...m.columns, hireDate: v } } : m))
+                }
+              />
+              <MappingRow
+                label="terminationDate (opsiyonel)"
+                preview={preview}
+                value={draftMapping?.columns.terminationDate ?? -1}
+                mode={draftMapping?.mode ?? "INDEX"}
+                allowNone
+                onChange={(v) =>
+                  setDraftMapping((m) => (m ? { ...m, columns: { ...m.columns, terminationDate: v } } : m))
+                }
+              />
+              <MappingRow
+                label="employmentAction (opsiyonel)"
+                preview={preview}
+                value={draftMapping?.columns.employmentAction ?? -1}
+                mode={draftMapping?.mode ?? "INDEX"}
+                allowNone
+                onChange={(v) =>
+                  setDraftMapping((m) => (m ? { ...m, columns: { ...m.columns, employmentAction: v } } : m))
+                }
+              />           
             </div>
             
             <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-2">
@@ -760,6 +839,10 @@ export default function EmployeesImportClient() {
                     <div>lastName ← {formatMappingValue(effectiveMapping, "lastName", preview)}</div>
                     <div>email ← {formatMappingValue(effectiveMapping, "email", preview, true)}</div>
                     <div>isActive ← {formatMappingValue(effectiveMapping, "isActive", preview, true)}</div>
+                    <div>branchCode ← {formatMappingValue(effectiveMapping, "branchCode", preview, true)}</div>
+                    <div>hireDate ← {formatMappingValue(effectiveMapping, "hireDate", preview, true)}</div>
+                    <div>terminationDate ← {formatMappingValue(effectiveMapping, "terminationDate", preview, true)}</div>
+                    <div>employmentAction ← {formatMappingValue(effectiveMapping, "employmentAction", preview, true)}</div>
                   </div>
                 ) : (
                   <div className="text-xs text-zinc-600">Eşleştirme seçince özet burada görünür.</div>
@@ -818,6 +901,7 @@ export default function EmployeesImportClient() {
                     <table className="w-full text-left text-xs">
                       <thead className="bg-zinc-50 text-zinc-700">
                         <tr>
+                          <th className="px-3 py-2 font-medium">Sicil</th>
                           <th className="px-3 py-2 font-medium">Satır</th>
                           <th className="px-3 py-2 font-medium">Kod</th>
                           <th className="px-3 py-2 font-medium">Mesaj</th>
@@ -825,7 +909,8 @@ export default function EmployeesImportClient() {
                       </thead>
                       <tbody className="divide-y divide-zinc-100">
                         {last.warnings.slice(0, 200).map((w, i) => (
-                          <tr key={i} className="hover:bg-zinc-50">
+                          <tr key={`${w.code}-${w.employeeCode ?? "no-code"}-${w.line}-${i}`} className="hover:bg-zinc-50">
+                            <td className="px-3 py-2 font-mono">{issuePrimaryId(w)}</td>
                             <td className="px-3 py-2 font-mono">{w.line ? w.line : "—"}</td>
                             <td className="px-3 py-2 font-mono">{w.code}</td>
                             <td className="px-3 py-2">{w.message}</td>
@@ -848,6 +933,7 @@ export default function EmployeesImportClient() {
                     <table className="w-full text-left text-xs">
                       <thead className="bg-zinc-50 text-zinc-700">
                         <tr>
+                          <th className="px-3 py-2 font-medium">Sicil</th>
                           <th className="px-3 py-2 font-medium">Satır</th>
                           <th className="px-3 py-2 font-medium">Kod</th>
                           <th className="px-3 py-2 font-medium">Mesaj</th>
@@ -855,7 +941,8 @@ export default function EmployeesImportClient() {
                       </thead>
                       <tbody className="divide-y divide-zinc-100">
                         {last.errors.slice(0, 200).map((e, i) => (
-                          <tr key={i} className="hover:bg-zinc-50">
+                          <tr key={`${e.code}-${e.employeeCode ?? "no-code"}-${e.line}-${i}`} className="hover:bg-zinc-50">
+                            <td className="px-3 py-2 font-mono">{issuePrimaryId(e)}</td>
                             <td className="px-3 py-2 font-mono">{e.line ? e.line : "—"}</td>
                             <td className="px-3 py-2 font-mono">{e.code}</td>
                             <td className="px-3 py-2">{e.message}</td>
@@ -904,7 +991,16 @@ function StepBadge(props: { title: string; ok: boolean; hint: string }) {
 
 function formatMappingValue(
   m: ImportMapping,
-  key: "employeeCode" | "firstName" | "lastName" | "email" | "isActive",
+  key:
+    | "employeeCode"
+    | "firstName"
+    | "lastName"
+    | "email"
+    | "isActive"
+    | "branchCode"
+    | "hireDate"
+    | "terminationDate"
+    | "employmentAction",
   preview: any,
   optional?: boolean
 ) {

@@ -1,7 +1,8 @@
 import { EventDirection } from "@prisma/client";
-import { getActiveCompanyId } from "@/src/services/company.service";
+import { getActiveCompanyId, getCompanyBundle } from "@/src/services/company.service";
 import { createRawEvent, listRawEvents } from "@/src/repositories/rawEvent.repo";
 import { prisma } from "@/src/repositories/prisma";
+import { dayKeyFromInstant, dbDateFromDayKey } from "@/src/utils/dayKey";
 
 export async function addManualEvent(input: {
   employeeId: string;
@@ -11,6 +12,8 @@ export async function addManualEvent(input: {
   deviceId?: string | null;
 }) {
   const companyId = await getActiveCompanyId();
+  const bundle = await getCompanyBundle();
+  const tz = bundle.policy?.timezone || "Europe/Istanbul";
 
   const employeeId = String(input.employeeId ?? "").trim();
   const rawDirection = input.direction ?? "IN";
@@ -32,6 +35,27 @@ export async function addManualEvent(input: {
 
   if (!emp) {
     throw new Error("EMPLOYEE_NOT_FOUND");
+  }
+
+  // ✅ Seçenek-A: Manual event, employment validity dışında ise BLOKLA.
+  // occurredAt instant -> canonical dayKey (policy timezone) -> @db.Date compare
+  const eventDayKey = dayKeyFromInstant(occurredAt, tz);
+  const eventDayDb = dbDateFromDayKey(eventDayKey);
+
+  const employed = await prisma.employeeEmploymentPeriod.findFirst({
+    where: {
+      companyId,
+      employeeId,
+      startDate: { lte: eventDayDb },
+      OR: [{ endDate: null }, { endDate: { gte: eventDayDb } }],
+    },
+    select: { id: true },
+  });
+
+  if (!employed) {
+    const err = new Error("EMPLOYEE_NOT_EMPLOYED_ON_DATE");
+    (err as any).meta = { dayKey: eventDayKey };
+    throw err;
   }
 
   // If doorId provided, verify it belongs to the same company and is active

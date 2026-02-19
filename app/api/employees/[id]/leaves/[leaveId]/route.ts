@@ -10,7 +10,7 @@ export async function DELETE(
   req: Request,
   { params }: { params: Promise<{ id: string; leaveId: string }> }
 ) {
-  await requireRole(["ADMIN", "HR"]);
+  await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR"]);
   const { id, leaveId } = await params;
 
   await deleteLeave(id, leaveId);

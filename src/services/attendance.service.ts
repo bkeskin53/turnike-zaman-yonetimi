@@ -2,10 +2,12 @@ import { DateTime } from "luxon";
 import { EventDirection, NormalizedStatus } from "@prisma/client";
 import { prisma } from "@/src/repositories/prisma";
 import { getActiveCompanyId, getCompanyBundle } from "@/src/services/company.service";
-import { getShiftTimesForEmployeeOnDate } from "@/src/services/shiftPlan.service";
-import { computeDailyAttendance } from "@/src/domain/attendance/computeDaily";
+import { getShiftTimesForEmployeeOnDate, resolveShiftForDayWithFallbackMinutes } from "@/src/services/shiftPlan.service";
+import { computeDailyAttendance, computeOvertimeDynamicBreak } from "@/src/domain/attendance/computeDaily";
 import { normalizePunches } from "@/src/domain/attendance/normalizePunches";
 import { isEmployeeOnLeave } from "@/src/services/leave.service";
+import { resolvePolicyRuleSetForEmployeeOnDate } from "@/src/services/policyResolver.service";
+import { resolveShiftPolicyRuleSetForEmployeeOnDate } from "@/src/services/shiftPolicyResolver.service";
 import { upsertDailyAttendance } from "@/src/repositories/attendance.repo";
 import { upsertNormalizedForRawEvent } from "@/src/repositories/normalizedEvent.repo";
 import { dbDateFromDayKey } from "@/src/utils/dayKey";
@@ -29,17 +31,67 @@ function toComputePolicy(policy: any) {
     maxDailyExitMinutes: policy.maxDailyExitMinutes ?? undefined,
     exitExceedAction: policy.exitExceedAction ?? undefined,
 
+    // Enterprise: overtime dynamic break (DB null -> domain undefined)
+    otBreakInterval: policy.otBreakInterval ?? undefined,
+    otBreakDuration: policy.otBreakDuration ?? undefined,
+
     // Worked minutes calculation mode (default handled in computeDaily)
     workedCalculationMode: policy.workedCalculationMode ?? undefined,
   };
 }
 
+type ComputePolicyInput = ReturnType<typeof toComputePolicy>;
+
+/**
+ * Model-A kilidi (SAP-benzeri):
+ * - Policy (work rules) sadece Workforce/Segment çözümlemesinden gelir.
+ * - Shift (vardiya) sadece Shift Plan çözümlemesinden gelir.
+ *
+ * Hesap motoru (computeDaily) bugün... vardiya penceresini bilmek zorunda olduğu için,
+ * sadece shiftStartMinute/shiftEndMinute alanlarını “engine input” üzerinde güncelleriz.
+ * Diğer policy alanları (grace/break/OT/leave...) shift plan tarafından ASLA override edilmez.
+ */
+function applyResolvedShiftMinutesToComputePolicy(args: {
+  base: ComputePolicyInput;
+  resolved: { startMinute?: number; endMinute?: number };
+}): ComputePolicyInput {
+  const { base, resolved } = args;
+  if (typeof resolved.startMinute === "number" && typeof resolved.endMinute === "number") {
+    const next = {
+      ...base,
+      shiftStartMinute: resolved.startMinute,
+      shiftEndMinute: resolved.endMinute,
+    };
+    // Guardrail: prevent accidental runtime mutation leaks in dev.
+    if (process.env.NODE_ENV !== "production") return Object.freeze(next);
+    return next;
+  }
+  if (process.env.NODE_ENV !== "production") return Object.freeze({ ...base });
+  return base;
+}
+
+function mergePolicyRules(baseCompanyPolicy: any, ruleSet: any) {
+  // CompanyPolicy = company-level (timezone vb.) source of truth.
+  // RuleSet = override layer.
+  // IMPORTANT: null/undefined in ruleSet must NOT wipe base values.
+  const merged: any = { ...baseCompanyPolicy };
+  if (ruleSet && typeof ruleSet === "object") {
+    for (const [k, v] of Object.entries(ruleSet)) {
+      if (v === null || v === undefined) continue;
+      merged[k] = v;
+    }
+  }
+  // TIME is canonical on company policy
+  merged.timezone = baseCompanyPolicy.timezone;
+  return merged;
+}
+
 export async function recomputeAttendanceForDate(date: string) {
   const companyId = await getActiveCompanyId();
   const bundle = await getCompanyBundle();
-  const policy = bundle.policy;
+  const companyPolicy = bundle.policy;
 
-  const tz = policy.timezone || "Europe/Istanbul";
+  const tz = companyPolicy.timezone || "Europe/Istanbul";
 
   // ------------------------------------------------------------------
   // Stage 7: Shift-aware raw event windowing (SAP Time Evaluation)
@@ -57,8 +109,18 @@ export async function recomputeAttendanceForDate(date: string) {
   const startUtc = dayStartLocal.toUTC();
   const endUtc = dayStartLocal.plus({ days: 2 }).toUTC();
 
+  const targetDayDb = dbDateFromDayKey(date);
+
   const employees = await prisma.employee.findMany({
-    where: { companyId, isActive: true },
+    where: {
+      companyId,
+      employmentPeriods: {
+        some: {
+          startDate: { lte: targetDayDb },
+          OR: [{ endDate: null }, { endDate: { gte: targetDayDb } }],
+        },
+      },
+    },
     select: { id: true },
   });
 
@@ -86,20 +148,65 @@ export async function recomputeAttendanceForDate(date: string) {
   let missingPunchCount = 0;
 
   for (const e of employees) {
-    // Determine shift times for this date and employee (weekly plan / template aware)
-    const shift = await getShiftTimesForEmployeeOnDate(e.id, date);
-    const fallbackShiftStart = policy.shiftStartMinute ?? 8 * 60;
-    const fallbackShiftEnd = policy.shiftEndMinute ?? 17 * 60;
-    const empShiftStart = shift.startMinute ?? fallbackShiftStart;
-    const empShiftEnd = shift.endMinute ?? fallbackShiftEnd;
+    // Phase-2: resolve optional policy ruleset assignment.
+    // Backwards compatible: if none, we use legacy CompanyPolicy (no behaviour change).
+    const resolvedRuleSet = await resolvePolicyRuleSetForEmployeeOnDate({
+      companyId,
+      employeeId: e.id,
+      dayKey: date,
+    });
+    // NOTE (Model-A): This is the *only* place where work rules are chosen.
+    // Shift assignment MUST NOT affect which rules are picked.
+    const workforcePolicy = resolvedRuleSet?.ruleSet
+      ? mergePolicyRules(companyPolicy, resolvedRuleSet.ruleSet)
+      : companyPolicy;
+
+    // 1) First pass: resolve planner/template shift WITHOUT fallback minutes.
+    // We mainly need shiftCode here to resolve shift-policy overrides (Model-B).
+    const plannerResolved = await resolveShiftForDayWithFallbackMinutes({
+      employeeId: e.id,
+      date,
+    });
+
+    // 2) Resolve shift-policy override (Model-B layer) using shiftCode.
+    const shiftPolicy = await resolveShiftPolicyRuleSetForEmployeeOnDate({
+      companyId,
+      employeeId: e.id,
+      dayKey: date,
+      shiftCode: plannerResolved.shiftCode ?? null,
+    });
+
+    // 3) Effective policy = workforce policy (+ shift override if present)
+    const effectivePolicy = shiftPolicy?.ruleSet
+      ? mergePolicyRules(workforcePolicy, shiftPolicy.ruleSet)
+      : workforcePolicy;
+
+    // 4) Final pass: resolve shift with correct fallback minutes from effective policy
+    // (If no plan/template exists, rule-set shiftStart/End should be used; not company default.)
+    const resolved = await resolveShiftForDayWithFallbackMinutes({
+      employeeId: e.id,
+      date,
+      fallbackStartMinute: (effectivePolicy as any).shiftStartMinute,
+      fallbackEndMinute: (effectivePolicy as any).shiftEndMinute,
+    });
+
+    // Keep engine behavior stable: computeDaily has defaults, but windowing needs numbers.
+    const policyStartExplicit =
+      typeof (effectivePolicy as any).shiftStartMinute === "number" ? (effectivePolicy as any).shiftStartMinute : undefined;
+    const policyEndExplicit =
+      typeof (effectivePolicy as any).shiftEndMinute === "number" ? (effectivePolicy as any).shiftEndMinute : undefined;
+
+    const empShiftStart = resolved.startMinute ?? policyStartExplicit ?? 8 * 60;
+    const empShiftEnd = resolved.endMinute ?? policyEndExplicit ?? 17 * 60;
 
     // Employee-specific event window
     // Stage 7 fix: add buffer so early IN / late OUT won't be dropped (prevents ABSENT / ORPHAN_OUT)
-    const windowBufferMinutes = 180; // 3 hours safety buffer (minimal, policy-independent)
+    const windowBufferMinutes = 720; // 12 saat güvenli pencere
      
     let empWindowStartLocal: DateTime;
     let empWindowEndLocal: DateTime;
     if (empShiftEnd <= empShiftStart) {
+      // Overnight shift: start on day D, end on day D+1
       empWindowStartLocal = dayStartLocal
         .plus({ minutes: empShiftStart })
         .minus({ minutes: windowBufferMinutes });
@@ -107,16 +214,50 @@ export async function recomputeAttendanceForDate(date: string) {
         .plus({ days: 1, minutes: empShiftEnd })
         .plus({ minutes: windowBufferMinutes });
     } else {
-      empWindowStartLocal = dayStartLocal;
-      empWindowEndLocal = dayStartLocal.plus({ days: 1 });
+      // Regular shift: narrow to shift window + buffer (prevents early IN / late OUT from being dropped)
+      empWindowStartLocal = dayStartLocal
+        .plus({ minutes: empShiftStart })
+        .minus({ minutes: windowBufferMinutes });
+      empWindowEndLocal = dayStartLocal
+        .plus({ minutes: empShiftEnd })
+        .plus({ minutes: windowBufferMinutes });
     }
     const empWindowStartUtc = empWindowStartLocal.toUTC().toJSDate();
     const empWindowEndUtc = empWindowEndLocal.toUTC().toJSDate();
 
     const empEventsAll = rawByEmployee.get(e.id) ?? [];
-    const empEvents = empEventsAll.filter(
-      (ev) => ev.occurredAt >= empWindowStartUtc && ev.occurredAt < empWindowEndUtc
-    );
+
+    // Track whether we captured an OUT outside the base window (next-day spillover).
+    let lateOutCaptured = false;
+
+    // FIX: Late OUT after window cutoff was being dropped -> MISSING_PUNCH
+    // Keep base window tight; additionally allow ONLY OUT after the base window
+    // up to next-day "cap" (default 12:00 local). This prevents pulling next-day INs.
+    const capMinuteRaw =
+      typeof (effectivePolicy as any).lateOutCaptureUntilMinute === "number"
+        ? (effectivePolicy as any).lateOutCaptureUntilMinute
+        : 12 * 60; // default 12:00
+    const capMinute = Math.max(0, Math.min(23 * 60 + 59, capMinuteRaw)); // clamp 00:00..23:59
+    const lateOutCapUtc = dayStartLocal.plus({ days: 1, minutes: capMinute }).toUTC().toJSDate();
+
+    const isOvernight = empShiftEnd <= empShiftStart;
+    const empEvents = empEventsAll.filter((ev) => {
+      // Base window (IN/OUT)
+      if (ev.occurredAt >= empWindowStartUtc && ev.occurredAt <= empWindowEndUtc) return true;
+
+      // Extra late OUT allowance (ONLY for regular shifts)
+      if (!isOvernight) {
+        if (
+          ev.direction === "OUT" &&
+          ev.occurredAt > empWindowEndUtc &&
+          ev.occurredAt <= lateOutCapUtc
+        ) {
+          lateOutCaptured = true;
+          return true;
+        }
+      }
+      return false;
+    });
 
     const norm = normalizePunches(empEvents);
 
@@ -135,18 +276,25 @@ export async function recomputeAttendanceForDate(date: string) {
       });
     }
 
-    // Derive policy overriding shift times if plan exists
-    const policyOverride: any = toComputePolicy(policy);
-    if (shift.startMinute !== undefined && shift.endMinute !== undefined) {
-      policyOverride.shiftStartMinute = shift.startMinute;
-      policyOverride.shiftEndMinute = shift.endMinute;
+    // Model-A: computeDaily'ye giden "policy" nesnesi bir engine-input'tur.
+    // Work rules workforcePolicy'den gelir; shiftStart/End ise shift plan resolver'dan gelir.
+    const baseComputePolicy = toComputePolicy(effectivePolicy);
+    let computePolicyInput = applyResolvedShiftMinutesToComputePolicy({
+      base: baseComputePolicy,
+      resolved: { startMinute: resolved.startMinute, endMinute: resolved.endMinute },
+    });
+
+    // Enterprise OFF propagation: resolver decided today is OFF => computeDaily must know it
+    if (resolved.isOffDay) {
+      computePolicyInput = { ...(computePolicyInput as any), isOffDay: true } as any;
     }
+
     // Compute daily attendance using either the weekly plan (if present) or the policy defaults.
     // The policyOverride already incorporates default shiftStart/End and any overrides from the weekly plan.
     const computed = computeDailyAttendance({
       date,
       timezone: tz,
-      policy: policyOverride,
+      policy: computePolicyInput,
       normalized: norm,
     });
 
@@ -174,12 +322,14 @@ export async function recomputeAttendanceForDate(date: string) {
           overtimeMinutes: 0,
           overtimeEarlyMinutes: 0,
           overtimeLateMinutes: 0,
+          otBreakCount: 0,
+          otBreakDeductMinutes: 0,
           status: "LEAVE",
           anomalies: [],
         };
       } else {
         // En az bir giriş/çıkış varsa leaveEntryBehavior uygulanır
-        const leb: any = policy.leaveEntryBehavior ?? "FLAG";
+        const leb: any = (effectivePolicy as any).leaveEntryBehavior ?? "FLAG";
         if (leb === "IGNORE") {
           anomalies.add("LEAVE_PUNCH_IGNORED");
           finalComputed = {
@@ -188,6 +338,8 @@ export async function recomputeAttendanceForDate(date: string) {
             overtimeMinutes: 0,
             overtimeEarlyMinutes: 0,
             overtimeLateMinutes: 0,
+            otBreakCount: 0,
+            otBreakDeductMinutes: 0,
             lateMinutes: 0,
             earlyLeaveMinutes: 0,
             status: "LEAVE",
@@ -195,11 +347,21 @@ export async function recomputeAttendanceForDate(date: string) {
           };
         } else if (leb === "COUNT_AS_OT") {
           anomalies.add("LEAVE_PUNCH_OT");
-          finalComputed = {
-            ...computed,
+          // Enterprise: apply dynamic OT break on leave-day OT as well (keep behavior consistent with OFF day)
+          const otAdjusted = computeOvertimeDynamicBreak({
             overtimeMinutes: computed.workedMinutes,
             overtimeEarlyMinutes: 0,
             overtimeLateMinutes: computed.workedMinutes,
+            otBreakInterval: computePolicyInput.otBreakInterval ?? undefined,
+            otBreakDuration: computePolicyInput.otBreakDuration ?? undefined,
+          });
+          finalComputed = {
+            ...computed,
+            overtimeMinutes: otAdjusted.overtimeMinutes,
+            overtimeEarlyMinutes: otAdjusted.overtimeEarlyMinutes,
+            overtimeLateMinutes: otAdjusted.overtimeLateMinutes,
+            otBreakCount: otAdjusted.otBreakCount,
+            otBreakDeductMinutes: otAdjusted.otBreakDeductMinutes,
             workedMinutes: 0,
             lateMinutes: 0,
             earlyLeaveMinutes: 0,
@@ -214,6 +376,8 @@ export async function recomputeAttendanceForDate(date: string) {
             overtimeMinutes: 0,
             overtimeEarlyMinutes: 0,
             overtimeLateMinutes: 0,
+            otBreakCount: 0,
+            otBreakDeductMinutes: 0,
             lateMinutes: 0,
             earlyLeaveMinutes: 0,
             status: "LEAVE",
@@ -226,13 +390,21 @@ export async function recomputeAttendanceForDate(date: string) {
     // Sonraki işlemler için finalComputed referansı
     const computedRef = finalComputed;
 
+    // Add anomaly for visibility: we captured a next-day late OUT to close the day.
+    // (This is operationally important: workedMinutes may look "too long", and should be reviewed.)
+    if (lateOutCaptured) {
+      if (!computedRef.anomalies.includes("LATE_OUT_CAPTURED")) {
+        computedRef.anomalies.push("LATE_OUT_CAPTURED");
+      }
+    }
+
     // -- Policy Fallback & NO_PLAN
     // Sadece referans vardiya tanımlı değilse ve gün OFF veya LEAVE değilse
     // punches varsa NO_PLAN anomalisi eklenir.
     if (computedRef.status !== "OFF" && computedRef.status !== "LEAVE") {
       const hasReferenceShift =
-        policyOverride.shiftStartMinute !== undefined &&
-        policyOverride.shiftEndMinute !== undefined;
+        computePolicyInput.shiftStartMinute !== undefined &&
+        computePolicyInput.shiftEndMinute !== undefined;
       if (!hasReferenceShift) {
         // Yalnızca giriş/çıkış veya çalışılan dakika varsa NO_PLAN ekle
         if (
@@ -263,8 +435,20 @@ export async function recomputeAttendanceForDate(date: string) {
       overtimeMinutes: computedRef.overtimeMinutes,
       overtimeEarlyMinutes: computedRef.overtimeEarlyMinutes ?? 0,
       overtimeLateMinutes: computedRef.overtimeLateMinutes ?? 0,
+      otBreakCount: (computedRef as any).otBreakCount ?? 0,
+      otBreakDeductMinutes: (computedRef as any).otBreakDeductMinutes ?? 0,
       status: computedRef.status as any,
       anomalies: computedRef.anomalies,
+
+      // Persist engine-used shift meta for audit/debug & UI.
+      shiftSource: resolved.source,
+      shiftSignature: resolved.signature,
+      // IMPORTANT: persist the exact minutes actually used by the engine (including policy fallback)
+      shiftStartMinute: empShiftStart,
+      shiftEndMinute: empShiftEnd,
+      // Prefer resolved spansMidnight; otherwise derive from effective minutes.
+      shiftSpansMidnight: resolved.spansMidnight ?? (empShiftEnd <= empShiftStart),
+
       computedAt,
     });
   }

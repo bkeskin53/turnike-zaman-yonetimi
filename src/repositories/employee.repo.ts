@@ -2,6 +2,9 @@ import { prisma } from "@/src/repositories/prisma";
 
 export async function hardDeleteEmployeeRepo(companyId: string, employeeId: string) {
   return prisma.$transaction(async (tx) => {
+    // 0) Employment periods + HR actions
+    await tx.employeeEmploymentPeriod.deleteMany({ where: { companyId, employeeId } });
+    await tx.employeeAction.deleteMany({ where: { companyId, employeeId } });
     // 1) Attendance kayıtları
     await tx.dailyAttendance.deleteMany({
       where: { companyId, employeeId },

@@ -7,7 +7,7 @@ import { getSessionOrNull } from "@/src/auth/guard";
 async function requireAdminOrHr() {
   const session = await getSessionOrNull();
   if (!session) return null;
-  if (session.role !== UserRole.ADMIN && session.role !== UserRole.HR) return null;
+  if (session.role !== UserRole.SYSTEM_ADMIN && session.role !== UserRole.HR_OPERATOR) return null;
   return session;
 }
 

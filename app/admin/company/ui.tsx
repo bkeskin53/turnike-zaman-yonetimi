@@ -20,7 +20,12 @@ type Bundle = {
     offDayEntryBehavior: "IGNORE" | "FLAG" | "COUNT_AS_OT";
     leaveEntryBehavior: "IGNORE" | "FLAG" | "COUNT_AS_OT";
     overtimeEnabled: boolean;
-
+    /**
+     * Enterprise: Overtime dynamic break
+     * (nullable => disabled)
+     */
+    otBreakInterval?: number | null;
+    otBreakDuration?: number | null;
     workedCalculationMode?: "ACTUAL" | "CLAMP_TO_SHIFT" | null;
 
     /**
@@ -52,13 +57,167 @@ function cx(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
 }
 
+// ------------------------------------------------------------
+// Mini Design System (Palette / Badges / Buttons / Icons)
+// ------------------------------------------------------------
+const DS = {
+  ring: "focus:outline-none focus:ring-2 focus:ring-zinc-900/10",
+  card: "rounded-3xl border border-zinc-200 bg-white shadow-sm",
+  softCard:
+    "rounded-3xl border border-zinc-200 bg-gradient-to-br from-sky-50 via-white to-violet-50 shadow-sm",
+  muted: "text-zinc-500",
+};
+
+type BadgeTone = "neutral" | "good" | "warn" | "danger" | "info" | "violet";
+
+function toneClasses(t: BadgeTone) {
+  switch (t) {
+    case "good":
+      return {
+        pill: "border-emerald-200 bg-emerald-50 text-emerald-800",
+        chip: "border-emerald-200 bg-emerald-50 text-emerald-800",
+        card: "border-emerald-200/70 bg-gradient-to-br from-emerald-50 via-white to-white",
+      };
+    case "warn":
+      return {
+        pill: "border-amber-200 bg-amber-50 text-amber-800",
+        chip: "border-amber-200 bg-amber-50 text-amber-900",
+        card: "border-amber-200/70 bg-gradient-to-br from-amber-50 via-white to-white",
+      };
+    case "danger":
+      return {
+        pill: "border-red-200 bg-red-50 text-red-800",
+        chip: "border-red-200 bg-red-50 text-red-800",
+        card: "border-red-200/70 bg-gradient-to-br from-red-50 via-white to-white",
+      };
+    case "info":
+      return {
+        pill: "border-sky-200 bg-sky-50 text-sky-800",
+        chip: "border-sky-200 bg-sky-50 text-sky-900",
+        card: "border-sky-200/70 bg-gradient-to-br from-sky-50 via-white to-white",
+      };
+    case "violet":
+      return {
+        pill: "border-violet-200 bg-violet-50 text-violet-800",
+        chip: "border-violet-200 bg-violet-50 text-violet-900",
+        card: "border-violet-200/70 bg-gradient-to-br from-violet-50 via-white to-white",
+      };
+    default:
+      return {
+        pill: "border-zinc-200 bg-white/60 text-zinc-700",
+        chip: "border-zinc-200 bg-zinc-50 text-zinc-700",
+        card: "border-zinc-200 bg-white",
+      };
+  }
+}
+
+function Badge(props: { tone?: BadgeTone; children: ReactNode; className?: string }) {
+  const t = props.tone ?? "neutral";
+  const tc = toneClasses(t);
+  return (
+    <span
+      className={cx(
+        "inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-medium",
+        tc.pill,
+        props.className
+      )}
+    >
+      {props.children}
+    </span>
+  );
+}
+
+type BtnVariant = "primary" | "secondary" | "ghost" | "danger";
+function Button(props: {
+  variant?: BtnVariant;
+  children: ReactNode;
+  className?: string;
+  disabled?: boolean;
+  type?: "button" | "submit";
+  title?: string;
+  onClick?: () => void;
+}) {
+  const v = props.variant ?? "secondary";
+  const base =
+    "inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2 text-xs font-semibold transition";
+  const variants = {
+    // Daha “ürün” hissi: mavi/indigo accent
+    primary:
+      "border border-indigo-700 bg-indigo-600 text-white shadow-sm hover:bg-indigo-700 hover:border-indigo-800",
+    secondary:
+      "border border-zinc-200 bg-white text-zinc-800 hover:bg-zinc-50 shadow-sm",
+    ghost: "border border-transparent bg-transparent text-zinc-700 hover:bg-zinc-50",
+    danger: "border border-red-200 bg-red-50 text-red-800 hover:bg-red-100",
+  }[v];
+  const disabled = props.disabled ? "cursor-not-allowed opacity-60" : "";
+  return (
+    <button
+      type={props.type ?? "button"}
+      onClick={props.onClick}
+      disabled={props.disabled}
+      title={props.title}
+      className={cx(base, variants, DS.ring, disabled, props.className)}
+    >
+      {props.children}
+    </button>
+  );
+}
+
+function IconChip(props: { tone?: BadgeTone; children: ReactNode }) {
+  const t = props.tone ?? "neutral";
+  const tc = toneClasses(t);
+  return (
+    <span
+      className={cx(
+        "inline-flex h-9 w-9 items-center justify-center rounded-2xl border text-[16px] shadow-sm",
+        tc.chip
+      )}
+    >
+      {props.children}
+    </span>
+  );
+}
+
+function TonePill(props: { tone?: "neutral" | "good" | "warn"; children: ReactNode }) {
+  const tone = props.tone ?? "neutral";
+  return (
+    <span
+      className={cx(
+        "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs",
+        tone === "good" && "border-emerald-200 bg-emerald-50 text-emerald-800",
+        tone === "warn" && "border-amber-200 bg-amber-50 text-amber-800",
+        tone === "neutral" && "border-zinc-200 bg-white/60 text-zinc-700"
+      )}
+    >
+      {props.children}
+    </span>
+  );
+}
+
+function NavButton(props: { onClick: () => void; title: string; desc: string }) {
+  return (
+    <button
+      type="button"
+      onClick={props.onClick}
+      className={cx(
+        "rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-left",
+        "transition hover:bg-zinc-50",
+        DS.ring
+      )}
+    >
+      <div className="text-xs font-semibold text-zinc-900">{props.title}</div>
+      <div className="mt-0.5 text-[11px] text-zinc-500">{props.desc}</div>
+    </button>
+  );
+}
+
 function FieldShell(props: {
   label: string;
   hint?: string;
   children: ReactNode;
 }) {
   return (
-    <label className="grid gap-1.5">
+    <label className="grid min-w-0 gap-1.5">
       <span className="text-xs font-medium text-zinc-600">{props.label}</span>
       {props.children}
       {props.hint ? <span className="text-[11px] text-zinc-500">{props.hint}</span> : null}
@@ -83,12 +242,58 @@ function InlineInfo(props: { tone?: "neutral" | "warn"; title: string; desc: Rea
   );
 }
 
+function ShortcutCard(props: {
+  href: string;
+  title: string;
+  desc: ReactNode;
+  badge?: string;
+  icon?: string;
+  tone?: BadgeTone;
+}) {
+  const tone = props.tone ?? "neutral";
+  const tc = toneClasses(tone);
+  return (
+    <a
+      href={props.href}
+      className={cx(
+        "group block rounded-3xl border p-4 shadow-sm",
+        tc.card,
+        "transition hover:-translate-y-0.5 hover:shadow-md",
+        DS.ring
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-start gap-3">
+            {props.icon ? <IconChip tone={tone}>{props.icon}</IconChip> : null}
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-zinc-900 group-hover:text-zinc-950">{props.title}</div>
+              <div className="mt-1 text-xs text-zinc-600">{props.desc}</div>
+            </div>
+          </div>
+        </div>
+        {props.badge ? (
+          <Badge tone={tone}>{props.badge}</Badge>
+        ) : null}
+      </div>
+      <div className="mt-3 text-xs font-medium text-zinc-700 group-hover:text-zinc-900">
+        Aç →
+      </div>
+    </a>
+  );
+}
+
 export default function CompanySettingsClient() {
   const [bundle, setBundle] = useState<Bundle | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const savedTimerRef = useRef<number | null>(null);
+
+  const companyRef = useRef<HTMLDivElement | null>(null);
+  const policyRef = useRef<HTMLDivElement | null>(null);
+  const advancedRef = useRef<HTMLDivElement | null>(null);
+  const scrollTo = (r: React.RefObject<HTMLDivElement | null>) => r.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   const [name, setName] = useState("");
   const [timezone, setTimezone] = useState("Europe/Istanbul");
@@ -103,6 +308,10 @@ export default function CompanySettingsClient() {
   const [overtimeEnabled, setOvertimeEnabled] = useState(false);
   const [workedCalculationMode, setWorkedCalculationMode] =
     useState<"ACTUAL" | "CLAMP_TO_SHIFT">("ACTUAL");
+
+  // Enterprise: Overtime dynamic break (optional)
+  const [otBreakInterval, setOtBreakInterval] = useState<string>("");
+  const [otBreakDuration, setOtBreakDuration] = useState<string>("");
 
   // Behavior when punches occur on leave days
   const [leaveEntryBehavior, setLeaveEntryBehavior] = useState<"IGNORE" | "FLAG" | "COUNT_AS_OT">("FLAG");
@@ -146,6 +355,14 @@ export default function CompanySettingsClient() {
     setLeaveEntryBehavior(data.policy.leaveEntryBehavior ?? "FLAG");
     setOvertimeEnabled(Boolean(data.policy.overtimeEnabled));
     setWorkedCalculationMode((data.policy.workedCalculationMode ?? "ACTUAL") as any);
+
+    // Enterprise: Overtime dynamic break (optional)
+    setOtBreakInterval(
+      data.policy.otBreakInterval != null ? String(data.policy.otBreakInterval) : ""
+    );
+    setOtBreakDuration(
+      data.policy.otBreakDuration != null ? String(data.policy.otBreakDuration) : ""
+    );
 
     // Advanced / Optional policy fields
     // Determine grace toggle based on graceMode (preferred) or graceAffectsWorked (legacy)
@@ -228,6 +445,21 @@ export default function CompanySettingsClient() {
           overtimeEnabled,
           workedCalculationMode,
 
+          // Enterprise: Overtime dynamic break
+          // "" => null (disable)
+          otBreakInterval:
+            otBreakInterval.trim() === ""
+              ? null
+              : (Number.isFinite(Number(otBreakInterval)) && Number(otBreakInterval) > 0
+                  ? Number(otBreakInterval)
+                  : null),
+          otBreakDuration:
+            otBreakDuration.trim() === ""
+              ? null
+              : (Number.isFinite(Number(otBreakDuration)) && Number(otBreakDuration) > 0
+                  ? Number(otBreakDuration)
+                  : null),
+
           // ✅ Advanced / Optional (boşsa gönderme)
           graceMode: graceAffectsWorked ? "PAID_PARTIAL" : "ROUND_ONLY",
           // IMPORTANT:
@@ -268,6 +500,8 @@ export default function CompanySettingsClient() {
     const curMaxSingle = maxSingleExitMinutes === "" ? 0 : Number(maxSingleExitMinutes);
     const curMaxDaily = maxDailyExitMinutes === "" ? 0 : Number(maxDailyExitMinutes);
     const curExitExceedAction = exitExceedAction !== "" ? exitExceedAction : undefined;
+    const curOtBreakInterval = otBreakInterval.trim() === "" ? null : Number(otBreakInterval);
+    const curOtBreakDuration = otBreakDuration.trim() === "" ? null : Number(otBreakDuration);
     // API'den null gelebilir; UI'da boş değer undefined. Dirty hesapta eşitleyelim.
     const savedExitExceedAction = (p.exitExceedAction ?? undefined) as any;
 
@@ -283,6 +517,8 @@ export default function CompanySettingsClient() {
       (leaveEntryBehavior ?? "FLAG") !== (p.leaveEntryBehavior ?? "FLAG") ||
       Boolean(overtimeEnabled) !== Boolean(p.overtimeEnabled) ||
       (workedCalculationMode ?? "ACTUAL") !== ((p.workedCalculationMode ?? "ACTUAL") as any) ||
+      (p.otBreakInterval ?? null) !== curOtBreakInterval ||
+      (p.otBreakDuration ?? null) !== curOtBreakDuration ||
       curGraceMode !== (p.graceMode ?? "ROUND_ONLY") ||
       Boolean(exitConsumesBreak) !== Boolean(p.exitConsumesBreak) ||
       curMaxSingle !== (p.maxSingleExitMinutes ?? 0) ||
@@ -302,6 +538,8 @@ export default function CompanySettingsClient() {
     leaveEntryBehavior,
     overtimeEnabled,
     workedCalculationMode,
+    otBreakInterval,
+    otBreakDuration,
     graceAffectsWorked,
     exitConsumesBreak,
     maxSingleExitMinutes,
@@ -344,55 +582,109 @@ export default function CompanySettingsClient() {
 
   return (
     <div className="grid gap-4 pb-10">
-      {/* Top summary header */}
-      <div className="rounded-3xl border border-zinc-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="text-sm font-semibold text-zinc-900">Company & Policy</div>
-            <div className="mt-1 text-xs text-zinc-500">
+      {/* Hero */}
+     <div className={cx(DS.softCard, "p-5")}>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-[11px] font-semibold tracking-wide text-zinc-500">Ayarlar</div>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <div className="text-lg font-semibold text-zinc-900">Şirket &amp; Politika</div>
+              <TonePill tone={showSaveBar ? "warn" : "good"}>
+                {showSaveBar ? "Kaydedilmemiş değişiklik var" : "Kaydedildi"}
+              </TonePill>
+              <TonePill tone="neutral">TZ: {timezone}</TonePill>
+              <TonePill tone="neutral">{name || bundle.company.name}</TonePill>
+            </div>
+            <div className="mt-2 max-w-3xl text-xs leading-5 text-zinc-600">
               Firma kimliği ve çalışma kuralları. Hesap motoru bu ayarları tek merkezden kullanır (tek kural kaynağı).
             </div>
             <div className="mt-2 text-[11px] text-zinc-500">
               İpucu: Değişiklik yaptığınızda altta “Kaydedilmemiş değişiklikler” çubuğu görünür. Kaydetmeden çıkarsanız değerler korunmaz.
             </div>
           </div>
+
           <div className="flex items-center gap-2">
-            <span
-              className={cx(
-                "rounded-full border px-2.5 py-1 text-xs",
-                showSaveBar ? "border-amber-200 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"
-              )}
+            <Button variant="secondary" onClick={load} disabled={saving}>
+              Yenile
+            </Button>
+            <Button
+              variant="primary"
+              onClick={async () => {
+                if (dirtyCompany) await saveCompany();
+                if (dirtyPolicy) await savePolicy();
+              }}
+              disabled={!canSave || saving || !showSaveBar}
+              title={!showSaveBar ? "Değişiklik yok" : "Hepsini Kaydet"}
             >
-              {showSaveBar ? "Kaydedilmemiş değişiklik var" : "Kaydedildi"}
-            </span>
-            <button
-              type="button"
-              onClick={load}
-              className="rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-xs hover:bg-zinc-50"
-              disabled={saving}
-            >
-              Sunucudan Yenile
-            </button>
+              {saving ? "Kaydediliyor..." : "Hepsini Kaydet"}
+            </Button>
           </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <ShortcutCard
+            href="/policy/rule-sets"
+            title="Kural Setleri"
+            icon="🧩"
+            tone="violet"
+            desc={<>Çalışma kurallarını tanımlayın ve Workforce/Segment ile vardiya katmanlarında yönetin.</>}
+            badge="POLICY"
+          />
+          <ShortcutCard
+            href="/policy/shift-overrides"
+            title="Vardiya Kural İstisnaları"
+            icon="🌙"
+            tone="warn"
+            desc={<>Vardiya bazlı kural istisnası tanımlayın (Model-B). ShiftCode üzerinden kural seti bağlanır.</>}
+            badge="SHIFT"
+          />
+          <ShortcutCard
+            href="/org"
+            title="Organizasyon"
+            icon="🏢"
+            tone="info"
+            desc={<>Şube / Kapı / Cihaz envanteri. Kaynaklar ve görünürlük için tek yer.</>}
+            badge="ORG"
+          />
         </div>
       </div>
 
+      {/* Two-column layout */}
+      <div className="grid gap-4 lg:grid-cols-12">
+        <aside className="lg:col-span-3">
+          <div className={cx("sticky top-4", DS.card, "p-3")}>
+            <div className="text-[11px] font-semibold tracking-wide text-zinc-500">Hızlı Geçiş</div>
+            <div className="mt-2 grid gap-2">
+              <NavButton onClick={() => scrollTo(companyRef)} title="Company" desc="Firma adı ve temel kimlik" />
+              <NavButton onClick={() => scrollTo(policyRef)} title="Policy" desc="Timezone, shift, grace, davranışlar" />
+              <NavButton onClick={() => scrollTo(advancedRef)} title="Advanced" desc="Opsiyonel alanlar / limitler" />
+           </div>
+          </div>
+        </aside>
+
+        <main className="lg:col-span-9 grid gap-4">
+
       {/* Company */}
-      <section className="rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <section
+        ref={companyRef}
+        className={cx(
+          DS.card,
+          "p-5",
+          "bg-gradient-to-br from-sky-50/60 via-white to-white border-sky-200/60"
+        )}
+      >
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold text-zinc-900">Company</h2>
             <div className="mt-1 text-xs text-zinc-500">Firma adı ve temel kimlik bilgisi.</div>
           </div>
-          <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs text-zinc-600">
-            ADMIN
-          </span>
+          <Badge tone="info">ADMIN</Badge>
         </div>
 
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <FieldShell label="Firma Adı">
             <input
-              className="h-10 rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
+              className="h-10 w-full min-w-0 rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Örn: Turnike Demo"
@@ -400,25 +692,15 @@ export default function CompanySettingsClient() {
           </FieldShell>
 
           <div className="flex items-end justify-end">
-            <button
-              type="button"
-              disabled={!canSave || saving || !dirtyCompany}
-              onClick={saveCompany}
-              className={cx(
-                "h-10 rounded-2xl px-4 text-sm font-medium transition",
-                !canSave || saving || !dirtyCompany
-                  ? "cursor-not-allowed border border-zinc-200 bg-zinc-100 text-zinc-500"
-                  : "border border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-800"
-              )}
-            >
+            <Button variant="primary" disabled={!canSave || saving || !dirtyCompany} onClick={saveCompany} className="h-10 text-sm">
               {saving ? "Kaydediliyor..." : "Company Kaydet"}
-            </button>
+            </Button>
           </div>
         </div>
       </section>
 
       {/* Policy */}
-      <section className="rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <section ref={policyRef} className={cx(DS.card, "p-5", "bg-gradient-to-br from-violet-50/50 via-white to-white border-violet-200/60")}>
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold text-zinc-900">Company Policy</h2>
@@ -426,9 +708,7 @@ export default function CompanySettingsClient() {
               Vardiya, grace, break, izin (LEAVE) ve fazla mesai (OT) davranışları.
             </div>
           </div>
-          <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs text-zinc-600">
-            ADMIN/HR
-          </span>
+          <Badge tone="info">ADMIN/HR</Badge>
         </div>
 
         {/* Core */}
@@ -439,7 +719,7 @@ export default function CompanySettingsClient() {
               hint="Canonical work day bu timezone’a göre tekilleştirilir."
             >
               <input
-                className="h-10 rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
+                className="h-10 w-full min-w-0 rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
                 value={timezone}
                 onChange={(e) => setTimezone(e.target.value)}
                 placeholder="Europe/Istanbul"
@@ -463,7 +743,7 @@ export default function CompanySettingsClient() {
               <div className="grid gap-4 md:grid-cols-2">
                 <FieldShell label="Shift Start">
                   <input
-                    className="h-10 rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
+                    className="h-10 w-full min-w-0 rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
                     type="time"
                     value={start}
                     onChange={(e) => setStart(e.target.value)}
@@ -471,7 +751,7 @@ export default function CompanySettingsClient() {
                 </FieldShell>
                 <FieldShell label="Shift End">
                   <input
-                    className="h-10 rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
+                    className="h-10 w-full min-w-0 rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
                     type="time"
                     value={end}
                     onChange={(e) => setEnd(e.target.value)}
@@ -480,7 +760,7 @@ export default function CompanySettingsClient() {
               </div>
               <FieldShell label="Break Minutes" hint="Otomatik break düşümü açıksa worked’dan düşer.">
                 <input
-                  className="h-10 rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
+                  className="h-10 w-full min-w-0 rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
                   type="number"
                   value={breakMin}
                   onChange={(e) => setBreakMin(Number(e.target.value))}
@@ -496,10 +776,10 @@ export default function CompanySettingsClient() {
               <div className="text-[11px] text-zinc-500">
                 Grace, geç kalma / erken çıkma toleransıdır. Anomali üretimini ve bazı modlarda worked hesabını etkileyebilir.
               </div>
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-4 xl:grid-cols-2 items-start">
                 <FieldShell label="Late Grace Minutes">
                   <input
-                    className="h-10 rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
+                    className="h-10 w-full min-w-0 rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
                     type="number"
                     value={lateGrace}
                     onChange={(e) => setLateGrace(Number(e.target.value))}
@@ -507,7 +787,7 @@ export default function CompanySettingsClient() {
                 </FieldShell>
                 <FieldShell label="Early Leave Grace Minutes">
                   <input
-                    className="h-10 rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
+                    className="h-10 w-full min-w-0 rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
                     type="number"
                     value={earlyGrace}
                     onChange={(e) => setEarlyGrace(Number(e.target.value))}
@@ -540,7 +820,7 @@ export default function CompanySettingsClient() {
                   hint="OFF: hafta sonu / resmi tatil gibi çalışılmayan gün (LEAVE değildir). OFF gününde punch gelirse ne olacak?"
                 >
                   <select
-                    className="h-10 rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
+                    className="h-10 w-full min-w-0 rounded-2xl border border-zinc-200 bg-white px-3 pr-10 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10 overflow-hidden text-ellipsis whitespace-nowrap"
                     value={offDayEntryBehavior}
                     onChange={(e) => setOffDayEntryBehavior(e.target.value as any)}
                   >
@@ -555,7 +835,7 @@ export default function CompanySettingsClient() {
                   hint="LEAVE: yıllık izin/rapor/mazeret (OFF ≠ LEAVE). İzin gününde punch gelirse ne olacak?"
                 >
                   <select
-                    className="h-10 rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
+                    className="h-10 w-full min-w-0 rounded-2xl border border-zinc-200 bg-white px-3 pr-10 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10 overflow-hidden text-ellipsis whitespace-nowrap"
                     value={leaveEntryBehavior}
                     onChange={(e) => setLeaveEntryBehavior(e.target.value as any)}
                   >
@@ -603,7 +883,7 @@ export default function CompanySettingsClient() {
                     </div>
                   </div>
                   <select
-                    className="mt-2 h-10 w-full rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
+                    className="mt-2 h-10 w-full min-w-0 rounded-2xl border border-zinc-200 bg-white px-3 pr-10 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10 overflow-hidden text-ellipsis whitespace-nowrap"
                     value={workedCalculationMode}
                     onChange={(e) => setWorkedCalculationMode(e.target.value as any)}
                   >
@@ -619,14 +899,14 @@ export default function CompanySettingsClient() {
           </div>
 
           {/* Advanced */}
-          <div className="rounded-3xl border border-zinc-200 bg-white p-4">
+          <div ref={advancedRef} className="rounded-3xl border border-zinc-200 bg-white p-4">
             <button
               type="button"
               className="flex w-full items-center justify-between rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-left text-sm font-semibold hover:bg-zinc-100"
               onClick={() => setAdvancedOpen((v) => !v)}
             >
               <span>Advanced / Optional</span>
-              <span className="text-xs font-medium text-zinc-600">{advancedOpen ? "Kapat" : "Aç"}</span>
+              <Badge tone={advancedOpen ? "warn" : "neutral"}>{advancedOpen ? "Açık" : "Kapalı"}</Badge>
             </button>
 
             {advancedOpen ? (
@@ -681,7 +961,7 @@ export default function CompanySettingsClient() {
                 <div className="grid gap-4 md:grid-cols-2">
                   <FieldShell label="Max single exit minutes" hint="Tek bir çıkış/pause için üst limit. 0: sınırsız (mevcut davranış).">
                     <input
-                      className="h-10 rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
+                    className="h-10 w-full min-w-0 rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
                       type="number"
                       value={maxSingleExitMinutes}
                       onChange={(e) => setMaxSingleExitMinutes(e.target.value)}
@@ -689,7 +969,7 @@ export default function CompanySettingsClient() {
                   </FieldShell>
                   <FieldShell label="Max daily exit minutes" hint="Gün toplam çıkış/pause için üst limit. 0: sınırsız (mevcut davranış).">
                     <input
-                      className="h-10 rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
+                    className="h-10 w-full min-w-0 rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
                       type="number"
                       value={maxDailyExitMinutes}
                       onChange={(e) => setMaxDailyExitMinutes(e.target.value)}
@@ -699,7 +979,7 @@ export default function CompanySettingsClient() {
 
                 <FieldShell label="Exit exceed action" hint="Limit aşılırsa üretilecek davranış/anomali.">
                   <select
-                    className="h-10 rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
+                    className="h-10 w-full min-w-0 rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
                     value={exitExceedAction}
                     onChange={(e) => setExitExceedAction(e.target.value as any)}
                   >
@@ -709,6 +989,73 @@ export default function CompanySettingsClient() {
                     <option value="FLAG">FLAG (anomali üret)</option>
                   </select>
                 </FieldShell>
+                {/* Enterprise: Overtime Dynamic Break */}
+<div className="grid gap-4 rounded-2xl border border-zinc-200 bg-white p-4">
+  <div className="flex flex-wrap items-start justify-between gap-2">
+    <div>
+      <div className="text-sm font-semibold text-zinc-900">Overtime Dynamic Break</div>
+      <div className="mt-1 text-[11px] text-zinc-500">
+        Fazla mesai dakikası hesaplandıktan sonra, tanımlı periyotlarda otomatik mola düşer.
+        <span className="ml-1">(Örn: her 180 dk OT&apos;de 30 dk mola)</span>
+      </div>
+    </div>
+    <span
+      className={cx(
+        "rounded-full border px-2.5 py-1 text-[11px]",
+        overtimeEnabled
+          ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+          : "border-zinc-200 bg-zinc-50 text-zinc-600"
+      )}
+    >
+      {overtimeEnabled ? "OT Açık" : "OT Kapalı"}
+    </span>
+  </div>
+
+  <InlineInfo
+    title="Nasıl çalışır?"
+    desc={
+      <>
+        Formül: <span className="font-medium">OT -= floor(OT / Interval) × Duration</span>. Sonuç 0 altına düşmez.
+        Boş bırakırsanız kural devre dışı kalır.
+      </>
+    }
+  />
+
+  <div className={cx("grid gap-4 md:grid-cols-2", !overtimeEnabled && "opacity-70")}>
+    <FieldShell
+      label="OT Break Interval (minutes)"
+      hint="Kaç dakikalık fazla mesai sonunda bir mola tetiklensin? (boş: kapalı)"
+    >
+      <input
+        className="h-10 w-full min-w-0 rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
+        type="number"
+        min={0}
+        inputMode="numeric"
+        value={otBreakInterval}
+        onChange={(e) => setOtBreakInterval(e.target.value)}
+        placeholder="Örn: 180"
+        disabled={!overtimeEnabled}
+      />
+    </FieldShell>
+
+    <FieldShell
+      label="OT Break Duration (minutes)"
+      hint="Tetiklenen mola süresi kaç dakika? (boş: kapalı)"
+    >
+      <input
+        className="h-10 w-full min-w-0 rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
+        type="number"
+        min={0}
+        inputMode="numeric"
+        value={otBreakDuration}
+        onChange={(e) => setOtBreakDuration(e.target.value)}
+        placeholder="Örn: 30"
+        disabled={!overtimeEnabled}
+      />
+    </FieldShell>
+  </div>
+</div>
+
               </div>
             ) : null}
           </div>
@@ -719,21 +1066,14 @@ export default function CompanySettingsClient() {
           <div className="mr-auto text-[11px] text-zinc-500">
             Not: “Policy Kaydet” sadece policy alanlarında değişiklik varsa aktif olur.
           </div>
-          <button
-            type="button"
-            disabled={!canSave || saving || !dirtyPolicy}
-            onClick={savePolicy}
-            className={cx(
-              "h-10 rounded-2xl px-4 text-sm font-medium transition",
-              !canSave || saving || !dirtyPolicy
-                ? "cursor-not-allowed border border-zinc-200 bg-zinc-100 text-zinc-500"
-                : "border border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-800"
-            )}
-          >
+          <Button variant="primary" disabled={!canSave || saving || !dirtyPolicy} onClick={savePolicy} className="h-10 text-sm">
             {saving ? "Kaydediliyor..." : "Policy Kaydet"}
-          </button>
+          </Button>
         </div>
       </section>
+
+        </main>
+      </div>
 
       {/* Sticky Save Bar */}
       <div
@@ -766,40 +1106,25 @@ export default function CompanySettingsClient() {
             <div className="flex items-center gap-2">
               {showSaveBar ? (
                 <>
-                  <button
-                    type="button"
-                    onClick={revertToSaved}
-                    disabled={saving}
-                    className="h-10 rounded-2xl border border-zinc-200 bg-white px-4 text-sm hover:bg-zinc-50"
-                  >
+                  <Button variant="secondary" onClick={revertToSaved} disabled={saving} className="h-10 text-sm">
                     Vazgeç (Yenile)
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    variant="primary"
                     onClick={async () => {
-                      // save both in order (company first)
                       if (dirtyCompany) await saveCompany();
                       if (dirtyPolicy) await savePolicy();
                     }}
                     disabled={!canSave || saving}
-                    className={cx(
-                      "h-10 rounded-2xl px-4 text-sm font-medium",
-                      !canSave || saving
-                        ? "cursor-not-allowed border border-zinc-200 bg-zinc-100 text-zinc-500"
-                        : "border border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-800"
-                    )}
+                    className="h-10 text-sm"
                   >
                     {saving ? "Kaydediliyor..." : "Hepsini Kaydet"}
-                  </button>
+                  </Button>
                 </>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => setJustSaved(false)}
-                  className="h-10 rounded-2xl border border-zinc-200 bg-white px-4 text-sm hover:bg-zinc-50"
-                >
+                <Button variant="ghost" onClick={() => setJustSaved(false)} className="h-10 text-sm">
                   Kapat
-                </button>
+                </Button>
               )}
             </div>
           </div>

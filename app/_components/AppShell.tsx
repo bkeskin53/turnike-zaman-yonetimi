@@ -35,6 +35,7 @@ function Icon({
     | "templates"
     | "assignments"
     | "org"
+    | "rules"
     | "employees"
     | "events"
     | "inbox"
@@ -162,6 +163,16 @@ function Icon({
           <path d="M8 9h8v6H8V9z" stroke="currentColor" strokeWidth="2" />
         </svg>
       );
+    case "rules":
+      return (
+        <svg {...common}>
+          <path d="M6 7h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          <path d="M6 12h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          <path d="M6 17h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          <path d="M9 7v10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0.9" />
+          <path d="M15 12v5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0.9" />
+        </svg>
+      );
     case "employees":
       return (
         <svg {...common}>
@@ -229,20 +240,56 @@ function Icon({
   }
 }
 
-const nav = [
-  { href: "/dashboard", label: "Dashboard", icon: "dashboard" as const },
-  { href: "/policy", label: "Company & Policy", icon: "company" as const },
-  { href: "/shift-templates", label: "Shift Templates", icon: "templates" as const },
-  { href: "/shift-assignments", label: "Toplu Vardiya", icon: "assignments" as const },
-  { href: "/org", label: "Organizasyon", icon: "org" as const },
-  { href: "/employees", label: "Employees", icon: "employees" as const },
-  { href: "/events", label: "Events", icon: "events" as const },
-  { href: "/integration", label: "Integration", icon: "bell" as const },
-  { href: "/tools/sap-simulator", label: "SAP Simulator", icon: "bell" as const },
-  { href: "/device-inbox", label: "Cihaz Inbox", icon: "inbox" as const },
-  { href: "/kiosk", label: "Kiosk", icon: "kiosk" as const },
-  { href: "/reports/daily", label: "Daily", icon: "daily" as const },
-  { href: "/reports/monthly", label: "Monthly", icon: "monthly" as const },
+type NavItem = {
+  href: string;
+  label: string;
+  icon: "dashboard" | "company" | "templates" | "assignments" | "org" | "rules" | "employees" | "events" | "bell" | "inbox" | "kiosk" | "daily" | "monthly" | "chevron";
+  parentHref?: string; // UI: show as child under parent
+};
+
+const nav: NavItem[] = [
+  { href: "/dashboard", label: "Kontrol Paneli", icon: "dashboard" as const },
+  { href: "/policy", label: "Şirket & Politika", icon: "company" as const },
+  {
+    href: "/policy/rule-sets",
+    label: "Kural Setleri",
+    icon: "rules" as const,
+    parentHref: "/policy",
+  },
+  {
+    href: "/policy/shift-overrides",
+    label: "Vardiya Kural İstisnaları",
+    icon: "rules" as const,
+    parentHref: "/policy",
+  },
+  {
+    href: "/policy/work-schedules",
+    label: "Çalışma Planları (Rota)",
+    icon: "assignments" as const,
+    parentHref: "/policy",
+  },
+  { href: "/shift-templates", label: "Vardiya Şablonları", icon: "templates" as const },
+  { href: "/shift-assignments", label: "Toplu Vardiya Atama", icon: "assignments" as const },
+  {
+    href: "/shift-assignments/planner",
+    label: "Vardiya Planlayıcı",
+    icon: "assignments" as const,
+    parentHref: "/shift-assignments",
+  },
+  { href: "/org", label: "Organizasyon Yapısı", icon: "org" as const },
+  { href: "/org/branches/policy", label: "Şube Kural Atamaları", icon: "rules" as const, parentHref: "/org" },
+  { href: "/employees", label: "Personeller", icon: "employees" as const },
+  { href: "/workforce", label: "İş Gücü Yönetimi", icon: "employees" as const },
+  { href: "/workforce/groups", label: "Segmentler", icon: "employees" as const, parentHref: "/workforce" },
+  { href: "/workforce/subgroups", label: "Alt Segmentler", icon: "employees" as const, parentHref: "/workforce" },
+  { href: "/workforce/classification", label: "Personel Sınıflandırma", icon: "employees" as const, parentHref: "/workforce" },
+  { href: "/events", label: "Geçiş Kayıtları", icon: "events" as const },
+  { href: "/integration", label: "Entegrasyon", icon: "bell" as const },
+  { href: "/tools/sap-simulator", label: "SAP Simülatör", icon: "bell" as const },
+  { href: "/device-inbox", label: "Cihaz Gelen Kutusu", icon: "inbox" as const },
+  { href: "/kiosk", label: "Turnike Ekranı", icon: "kiosk" as const },
+  { href: "/reports/daily", label: "Günlük Rapor", icon: "daily" as const },
+  { href: "/reports/monthly", label: "Aylık Rapor", icon: "monthly" as const },
 ];
 
 export default function AppShell(props: {
@@ -325,6 +372,7 @@ export default function AppShell(props: {
       <div className={cx("grid gap-1.5", propsNav.collapsed && "gap-2")}>
         {nav.map((n) => {
           const isActive = n.href === activeHref;
+          const isChild = !!n.parentHref;
           return (
             <Link
               key={n.href}
@@ -333,6 +381,7 @@ export default function AppShell(props: {
               className={cx(
                 "group relative flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition",
                 "border border-transparent",
+                isChild && !propsNav.collapsed && "ml-6",
                 isActive
                   ? "bg-white/12 text-white border-white/12 shadow-[0_12px_28px_rgba(0,0,0,0.25)]"
                   : "text-white/80 hover:bg-white/10 hover:text-white"
@@ -341,7 +390,8 @@ export default function AppShell(props: {
             >
               <span
                 className={cx(
-                  "grid h-9 w-9 place-items-center rounded-xl border border-white/10 bg-white/8",
+                  "grid place-items-center rounded-xl border border-white/10 bg-white/8",
+                  isChild ? "h-8 w-8" : "h-9 w-9",
                   isActive ? "bg-white/12" : "group-hover:bg-white/12"
                )}
               >
@@ -349,7 +399,14 @@ export default function AppShell(props: {
               </span>
 
               <span className={cx("min-w-0 flex-1 truncate", propsNav.collapsed && "hidden")}>
-                {n.label}
+                {isChild ? (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="text-white/50">›</span>
+                    <span>{n.label}</span>
+                  </span>
+                ) : (
+                  n.label
+                )}
               </span>
 
               <span className={cx(propsNav.collapsed && "hidden")}>

@@ -7,6 +7,7 @@ import {
 } from "@/src/repositories/dailyAdjustment.repo";
 import { DailyStatus } from "@prisma/client";
 import { dbDateFromDayKey } from "@/src/utils/dayKey";
+import { assertEmployeeEmployedForRange, EmploymentNotEmployedError } from "@/src/services/employmentGuard.service";
 
 /**
  * Canonicalize a day string into a UTC Date at 00:00:00Z for that same calendar day.
@@ -84,6 +85,12 @@ export async function upsertDailyAdjustmentForEmployeeOnDate(
   const tz = policy.timezone || "Europe/Istanbul";
   const utc = normalizeToUtcMidnight(date, tz);
   if (!utc) throw new Error("INVALID_DATE");
+  // ✅ Eksik-3: adjustment sadece employment validity içinde girilebilir (strict)
+  await assertEmployeeEmployedForRange({
+    employeeId,
+    fromDayKey: date,
+    toDayKey: date,
+  });
   return upsertDailyAdjustment({
     employeeId,
     date: utc,
@@ -104,5 +111,12 @@ export async function deleteDailyAdjustmentForEmployeeOnDate(
   const tz = policy.timezone || "Europe/Istanbul";
   const utc = normalizeToUtcMidnight(date, tz);
   if (!utc) throw new Error("INVALID_DATE");
+  // ✅ Eksik-3: employment dışındaki güne adjustment silme/temizleme de yok
+  await assertEmployeeEmployedForRange({
+    employeeId,
+    fromDayKey: date,
+    toDayKey: date,
+  });
   return deleteDailyAdjustment(employeeId, utc);
 }
+export { EmploymentNotEmployedError };

@@ -6,7 +6,7 @@ import RequestDetailClient from "./ui";
 export default async function IntegrationRequestPage(props: {
   params: Promise<{ requestId: string }>;
 }) {
-  await requireRole(["ADMIN", "HR"]);
+  await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR"]);
 
   const { requestId } = await props.params;
   const item = await getIntegrationRequestDetail(requestId);

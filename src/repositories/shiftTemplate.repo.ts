@@ -28,6 +28,7 @@ export async function findShiftTemplateBySignature(companyId: string, signature:
 
 export async function createShiftTemplate(input: {
   companyId: string;
+  shiftCode: string;
   signature: string;
   startTime: string;
   endTime: string;
@@ -36,6 +37,7 @@ export async function createShiftTemplate(input: {
   return prisma.shiftTemplate.create({
     data: {
       companyId: input.companyId,
+      shiftCode: input.shiftCode,
       signature: input.signature,
       startTime: input.startTime,
       endTime: input.endTime,
@@ -48,6 +50,7 @@ export async function updateShiftTemplate(input: {
   companyId: string;
   id: string;
   signature: string;
+  shiftCode?: string;
   startTime: string;
   endTime: string;
   spansMidnight: boolean;
@@ -56,6 +59,7 @@ export async function updateShiftTemplate(input: {
     where: { id: input.id },
     data: {
       companyId: input.companyId,
+      shiftCode: input.shiftCode,
       signature: input.signature,
       startTime: input.startTime,
       endTime: input.endTime,

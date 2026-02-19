@@ -6,7 +6,7 @@ import { activateShiftTemplateForCompany } from "@/src/services/shiftTemplate.se
 
 export async function POST(_: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
-    await requireRole(["ADMIN", "HR"]);
+    await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN"]);
     const { id } = await ctx.params;
     const companyId = await getActiveCompanyId();
     await activateShiftTemplateForCompany(companyId, id);

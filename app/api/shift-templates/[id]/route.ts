@@ -6,13 +6,14 @@ import { updateShiftTemplateForCompany, deactivateShiftTemplateForCompany } from
 
 export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
-    await requireRole(["ADMIN", "HR"]);
+    await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN"]);
     const { id } = await ctx.params;
     const companyId = await getActiveCompanyId();
     const body = await req.json().catch(() => ({}));
     const startTime = String(body?.startTime ?? "");
     const endTime = String(body?.endTime ?? "");
-    const item = await updateShiftTemplateForCompany(companyId, id, { startTime, endTime });
+    const shiftCode = body?.shiftCode ? String(body.shiftCode) : undefined;
+    const item = await updateShiftTemplateForCompany(companyId, id, { startTime, endTime, shiftCode });
     return NextResponse.json({ item });
   } catch (e: any) {
     const msg = typeof e?.message === "string" ? e.message : "";
@@ -28,7 +29,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
 
 export async function DELETE(_: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
-    await requireRole(["ADMIN", "HR"]);
+    await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN"]);
     const { id } = await ctx.params;
     const companyId = await getActiveCompanyId();
     await deactivateShiftTemplateForCompany(companyId, id);

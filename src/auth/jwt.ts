@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 
 export type JwtPayload = {
   sub: string; // userId
-  role: "ADMIN" | "HR" | "USER";
+  role: "SYSTEM_ADMIN" | "HR_CONFIG_ADMIN" | "HR_OPERATOR" | "SUPERVISOR";
 };
 
 const secret = () => {

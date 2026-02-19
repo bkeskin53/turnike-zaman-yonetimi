@@ -41,6 +41,13 @@ export async function upsertPolicy(
     offDayEntryBehavior?: "IGNORE" | "FLAG" | "COUNT_AS_OT";
     overtimeEnabled?: boolean;
     
+    /**
+     * Enterprise: Overtime dynamic break
+     * - null => disable / clear
+     */
+    otBreakInterval?: number | null;
+    otBreakDuration?: number | null;
+    
     graceAffectsWorked?: boolean;
     /**
      * Optional grace mode. If provided, controls how grace minutes are treated.

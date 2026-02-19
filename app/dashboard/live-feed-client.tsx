@@ -50,6 +50,20 @@ export default function LiveFeedClient({ tz }: { tz: string }) {
 
   const visible = events.slice(0, MAX_VISIBLE);
 
+  function dirPill(direction: "IN" | "OUT") {
+    const cls =
+      direction === "IN"
+        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+        : "border-amber-200 bg-amber-50 text-amber-900";
+    return (
+      <span
+        className={`inline-flex items-center rounded-full border px-2 py-1 text-[11px] font-semibold ${cls}`}
+      >
+        {direction}
+      </span>
+    );
+  }
+
   return (
     <div className="flex h-full flex-col">
       <div className="text-sm font-semibold">Canlı Geçiş Akışı</div>
@@ -72,7 +86,9 @@ export default function LiveFeedClient({ tz }: { tz: string }) {
             visible.map((ev) => (
               <div
                 key={ev.id}
-                className="flex items-center justify-between rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2"
+                className={
+                  "flex items-center justify-between rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2"
+                }
               >
                 <div className="min-w-0">
                   <div className="text-sm">
@@ -92,9 +108,7 @@ export default function LiveFeedClient({ tz }: { tz: string }) {
                         : ""}
                   </div>
                 </div>
-                <div className="ml-3 shrink-0 text-xs font-mono uppercase text-zinc-700">
-                  {ev.direction}
-                </div>
+                <div className="ml-3 shrink-0">{dirPill(ev.direction)}</div>
               </div>
             ))
           )}

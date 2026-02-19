@@ -9,6 +9,7 @@ import { prisma } from "@/src/repositories/prisma";
 import { upsertWeeklyShiftPlan } from "@/src/repositories/shiftPlan.repo";
 import { auditLog } from "@/src/services/audit.service";
 import { computeWeekStartUTC } from "@/src/services/shiftPlan.service";
+import { findEmployeesNotOverlappingEmploymentRange } from "@/src/services/employmentGuard.service";
 
 function isISODate(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
@@ -16,7 +17,7 @@ function isISODate(value: string): boolean {
 
 export async function POST(req: Request) {
   try {
-    const session = await requireRole(["ADMIN", "HR"]);
+    const session = await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR"]);
 
     const companyId = await getActiveCompanyId();
     const body: any = await req.json().catch(() => ({}));
@@ -59,6 +60,39 @@ export async function POST(req: Request) {
     }
 
     const weekStartUTC = computeWeekStartUTC(weekStartDate, tz);
+
+    // ✅ Eksik-3: employment validity ile hiç çakışmayan haftaya shift plan yazma (blok)
+    const weekEndDate = DateTime.fromISO(weekStartDate, { zone: tz }).plus({ days: 6 }).toISODate()!;
+    const notOkIds = await findEmployeesNotOverlappingEmploymentRange({
+      companyId,
+      employeeIds: uniq,
+      fromDayKey: weekStartDate,
+      toDayKey: weekEndDate,
+    });
+    if (notOkIds.length > 0) {
+      const bad = await prisma.employee.findMany({
+        where: { companyId, id: { in: notOkIds } },
+        select: { id: true, employeeCode: true, firstName: true, lastName: true },
+        orderBy: [{ employeeCode: "asc" }],
+      });
+      return NextResponse.json(
+        {
+          error: "EMPLOYEE_NOT_EMPLOYED_ON_WEEK",
+          message: "Bazı personeller seçilen hafta aralığında employment validity dışında olduğu için plan yazılamadı.",
+          meta: {
+            weekStartDate,
+            weekEndDate,
+            count: bad.length,
+            employees: bad.map((e) => ({
+              employeeId: e.id,
+              employeeCode: e.employeeCode,
+              fullName: `${e.firstName ?? ""} ${e.lastName ?? ""}`.trim(),
+            })),
+          },
+        },
+        { status: 400 }
+      );
+    }
 
     // Diff guard: skip employees that already have the same week template for this week
     const existingPlans = await prisma.weeklyShiftPlan.findMany({

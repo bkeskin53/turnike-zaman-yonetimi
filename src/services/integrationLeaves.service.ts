@@ -13,6 +13,7 @@ import {
   summarizeCallbackForMeta,
   type IntegrationCallbackConfig,
 } from "@/src/services/integrationWebhook.service";
+import { assertEmployeeEmployedForRange } from "@/src/services/employmentGuard.service";
 
 type UpsertLeaveInput = {
   externalRef: string;
@@ -236,6 +237,15 @@ export async function integrationUpsertLeaves(input: UpsertBatchInput, ctx: {
         if (fromUtc.getTime() > toUtc.getTime()) {
           return { ok: false as const, error: { code: "LEAVE_INVALID_RANGE", message: "dateFrom cannot be after dateTo" } };
         }
+        
+        // ✅ Eksik-3: integration leave de employment validity içinde olmalı (strict)
+        await assertEmployeeEmployedForRange({
+          companyId,
+          employeeId,
+          fromDayKey: dateFrom,
+          toDayKey: dateTo,
+          db: tx,
+        });
 
         // If existing and hash matches -> unchanged
         if (link?.lastPayloadHash && link.lastPayloadHash === payloadHash) {

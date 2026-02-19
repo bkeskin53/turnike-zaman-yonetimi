@@ -2,8 +2,10 @@ export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 import net from "net";
+import { requireRole } from "@/src/auth/guard";
 import { prisma } from "@/src/repositories/prisma";
 import { getActiveCompanyId } from "@/src/services/company.service";
+import { authErrorResponse } from "@/src/utils/api";
 
 function isIpv4(ip: string) {
   return /^(\d{1,3}\.){3}\d{1,3}$/.test(ip);
@@ -31,6 +33,14 @@ function tcpPing(host: string, port: number, timeoutMs = 1500): Promise<number> 
 }
 
 export async function POST(req: Request) {
+  // Auth (outer)
+  try {
+    // OPS: device connectivity checks are operational
+    await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR"]);
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   const companyId = await getActiveCompanyId();
   const body = await req.json().catch(() => ({} as any));
   const deviceId = String(body.deviceId ?? "").trim();

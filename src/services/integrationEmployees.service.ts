@@ -1,13 +1,14 @@
 import crypto from "crypto";
 import { Prisma, IntegrationLogStatus } from "@prisma/client";
 import { prisma } from "@/src/repositories/prisma";
-import { getActiveCompanyId } from "@/src/services/company.service";
+import { getActiveCompanyId, getCompanyBundle } from "@/src/services/company.service";
 import {
   createIntegrationLogRepo,
   finalizeIntegrationLogRepo,
   findEmployeeLinkRepo,
   upsertEmployeeLinkRepo,
 } from "@/src/repositories/integration.repo";
+import { dbDateFromDayKey, dayKeyToday } from "@/src/utils/dayKey";
 import {
   sendIntegrationCallback,
   summarizeCallbackForMeta,
@@ -59,6 +60,10 @@ export async function integrationUpsertEmployees(input: UpsertBatchInput, ctx: {
 }) {
   const companyId = await getActiveCompanyId();
   const dryRun = !!ctx.dryRun;
+  const bundle = await getCompanyBundle();
+  const tz = bundle.policy?.timezone || "Europe/Istanbul";
+  const todayKey = dayKeyToday(tz);
+  const todayDb = dbDateFromDayKey(todayKey);
 
   let willCreate = 0;
   let willUpdate = 0;
@@ -187,17 +192,53 @@ export async function integrationUpsertEmployees(input: UpsertBatchInput, ctx: {
               employee = { id: "__DRY__", employeeCode };
             } else {
               employee = await tx.employee.create({
-              data: {
-                companyId,
-                employeeCode,
-                firstName,
-                lastName,
-                email: email ?? null,
-                isActive: isActive ?? true,
-                ...(cardNo !== undefined ? { cardNo } : {}),
-                ...(deviceUserId !== undefined ? { deviceUserId } : {}),
-              },
+                data: {
+                  companyId,
+                  employeeCode,
+                  firstName,
+                  lastName,
+                  email: email ?? null,
+                  // lifecycle is governed by employmentPeriods; keep employee.isActive as a cache for "today"
+                  isActive: (isActive ?? true) ? true : false,
+                  ...(cardNo !== undefined ? { cardNo } : {}),
+                  ...(deviceUserId !== undefined ? { deviceUserId } : {}),
+                },
               });
+
+              // Employment period (SAP-like validity)
+              await tx.employeeEmploymentPeriod.create({
+                data: {
+                  companyId,
+                  employeeId: employee.id,
+                  startDate: todayDb,
+                  endDate: (isActive ?? true) ? null : todayDb,
+                  reason: "INTEGRATION_CREATE",
+                },
+              });
+
+              await tx.employeeAction.create({
+                data: {
+                  companyId,
+                  employeeId: employee.id,
+                  type: "HIRE",
+                  effectiveDate: todayDb,
+                  note: "INTEGRATION_CREATE",
+                  details: { sourceSystem },
+                },
+              });
+
+              if ((isActive ?? true) === false) {
+                await tx.employeeAction.create({
+                  data: {
+                    companyId,
+                    employeeId: employee.id,
+                    type: "TERMINATE",
+                    effectiveDate: todayDb,
+                    note: "INTEGRATION_CREATE_INACTIVE",
+                    details: { sourceSystem },
+                  },
+                });
+              }
             }
           }
         }
@@ -234,7 +275,6 @@ export async function integrationUpsertEmployees(input: UpsertBatchInput, ctx: {
             lastName,
           };
           if (email !== undefined) data.email = email;
-          if (isActive !== undefined) data.isActive = isActive;
           if (cardNo !== undefined) data.cardNo = cardNo;
           if (deviceUserId !== undefined) data.deviceUserId = deviceUserId;
 
@@ -249,6 +289,81 @@ export async function integrationUpsertEmployees(input: UpsertBatchInput, ctx: {
               employee = await tx.employee.update({
                 where: { id: employee.id, companyId },
                 data,
+              });
+            }
+          }
+        }
+
+        // 3b) Employment lifecycle sync (SAP-like validity periods)
+        if (isActive !== undefined) {
+          if (!dryRun && employee.id !== "__DRY__") {
+            if (isActive === false) {
+              const open = await tx.employeeEmploymentPeriod.findFirst({
+                where: { companyId, employeeId: employee.id, endDate: null },
+                orderBy: [{ startDate: "desc" }],
+              });
+
+              if (open) {
+                await tx.employeeEmploymentPeriod.update({
+                  where: { id: open.id },
+                  data: { endDate: todayDb, reason: "INTEGRATION_TERMINATE" },
+                });
+              }
+
+              await tx.employeeAction.create({
+                data: {
+                  companyId,
+                  employeeId: employee.id,
+                  type: "TERMINATE",
+                  effectiveDate: todayDb,
+                  note: "INTEGRATION_TERMINATE",
+                  details: { sourceSystem },
+                },
+              });
+
+              await tx.employee.update({
+                where: { id: employee.id, companyId },
+                data: { isActive: false },
+              });
+            } else {
+              // Rehire / reactivate effective today (if not already employed today)
+              const overlap = await tx.employeeEmploymentPeriod.findFirst({
+                where: {
+                  companyId,
+                  employeeId: employee.id,
+                  startDate: { lte: todayDb },
+                  OR: [{ endDate: null }, { endDate: { gte: todayDb } }],
+                },
+                select: { id: true },
+              });
+
+              if (!overlap) {
+                const created = await tx.employeeEmploymentPeriod.create({
+                  data: {
+                    companyId,
+                    employeeId: employee.id,
+                    startDate: todayDb,
+                    endDate: null,
+                    reason: "INTEGRATION_REHIRE",
+                  },
+                  select: { id: true },
+                });
+
+                await tx.employeeAction.create({
+                  data: {
+                    companyId,
+                    employeeId: employee.id,
+                    type: "REHIRE",
+                    effectiveDate: todayDb,
+                    note: "INTEGRATION_REHIRE",
+                    details: { sourceSystem, periodId: created.id },
+                  },
+                });
+              }
+
+              await tx.employee.update({
+                where: { id: employee.id, companyId },
+                data: { isActive: true },
               });
             }
           }

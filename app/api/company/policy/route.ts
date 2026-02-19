@@ -13,6 +13,17 @@ function toBool(v: unknown) {
   return undefined;
 }
 
+function toIntOrNullOrUndefined(v: unknown): number | null | undefined {
+  // undefined => field not provided (do not touch DB)
+  if (v === undefined) return undefined;
+  // null => explicitly clear (persist null)
+  if (v === null) return null;
+  // number/string => parse int
+  const n = typeof v === "number" ? v : Number(v);
+  if (!Number.isFinite(n)) return undefined;
+  return Math.trunc(n);
+}
+
 /**
  * Exit exceed action tipi (TS daraltma için şart)
  */
@@ -24,7 +35,7 @@ type WorkedCalculationMode = (typeof WORKED_MODES)[number];
 
 export async function PUT(req: Request) {
   try {
-    await requireRole(["ADMIN", "HR"]);
+    await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN"]);
     const body = await req.json().catch(() => null);
 
     /**
@@ -72,6 +83,13 @@ export async function PUT(req: Request) {
       offDayEntryBehavior,
       overtimeEnabled: toBool(body?.overtimeEnabled),
       workedCalculationMode,
+
+      /**
+       * Enterprise: Overtime dynamic break
+       * null gönderilebilmeli (disable/clear)
+       */
+      otBreakInterval: toIntOrNullOrUndefined(body?.otBreakInterval),
+      otBreakDuration: toIntOrNullOrUndefined(body?.otBreakDuration),
 
       /**
        * Yeni opsiyonel policy alanları

@@ -1,8 +1,17 @@
 import { NextResponse } from "next/server";
+import { requireRole } from "@/src/auth/guard";
 import { prisma } from "@/src/repositories/prisma";
 import { getActiveCompanyId } from "@/src/services/company.service";
+import { authErrorResponse } from "@/src/utils/api";
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    // CONFIG: update door master
+    await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN"]);
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   const companyId = await getActiveCompanyId();
   const { id } = await params;
   const doorId = String(id ?? "").trim();

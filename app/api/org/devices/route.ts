@@ -1,68 +1,84 @@
 import { NextResponse } from "next/server";
+import { requireRole } from "@/src/auth/guard";
 import { prisma } from "@/src/repositories/prisma";
 import { getActiveCompanyId } from "@/src/services/company.service";
+import { authErrorResponse } from "@/src/utils/api";
 
 export async function GET() {
-  const companyId = await getActiveCompanyId();
-  const rows = await prisma.device.findMany({
-    where: { companyId },
-    orderBy: [{ createdAt: "desc" }],
-    select: {
-      id: true,
-      branchId: true,
-      name: true,
-      ip: true,
-      port: true,
-      driver: true,
-      doorId: true,
-      isActive: true,
-      lastSeenAt: true,
-      lastSyncAt: true,
-      lastErrorAt: true,
-      lastErrorMessage: true,
-    },
-  });
-  return NextResponse.json(rows);
+  try {
+    // Read-only master data (must be authenticated)
+    await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN", "HR_OPERATOR", "SUPERVISOR"]);
+
+    const companyId = await getActiveCompanyId();
+    const rows = await prisma.device.findMany({
+      where: { companyId },
+      orderBy: [{ createdAt: "desc" }],
+      select: {
+        id: true,
+        branchId: true,
+        name: true,
+        ip: true,
+        port: true,
+        driver: true,
+        doorId: true,
+        isActive: true,
+        lastSeenAt: true,
+        lastSyncAt: true,
+        lastErrorAt: true,
+        lastErrorMessage: true,
+      },
+    });
+    return NextResponse.json(rows);
+  } catch (err) {
+    return authErrorResponse(err);
+  }
 }
 
 export async function POST(req: Request) {
-  const companyId = await getActiveCompanyId();
-  const body = await req.json();
+  try {
+    // CONFIG: create device
+    await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN"]);
 
-  const branchId = String(body.branchId ?? "").trim();
-  const name = String(body.name ?? "").trim();
-  const ip = body.ip ? String(body.ip).trim() : null;
-  const port = body.port ? Number(body.port) : 4370;
-  const driver = String(body.driver ?? "ZKTECO_PULL").trim();
+    const companyId = await getActiveCompanyId();
+    const body = await req.json();
 
-  if (!branchId || !name) {
-    return NextResponse.json({ error: "branchId ve name zorunlu" }, { status: 400 });
+    const branchId = String(body.branchId ?? "").trim();
+    const name = String(body.name ?? "").trim();
+    const ip = body.ip ? String(body.ip).trim() : null;
+    const port = body.port ? Number(body.port) : 4370;
+    const driver = String(body.driver ?? "ZKTECO_PULL").trim();
+
+    if (!branchId || !name) {
+      return NextResponse.json({ error: "branchId ve name zorunlu" }, { status: 400 });
+    }
+
+    const allowed = new Set(["ZKTECO_PULL", "ZKTECO_PUSH", "GENERIC"]);
+    const safeDriver = allowed.has(driver) ? driver : "ZKTECO_PULL";
+
+    const created = await prisma.device.create({
+      data: {
+        companyId,
+        branchId,
+        name,
+        ip,
+        port,
+        driver: safeDriver as any,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        branchId: true,
+        name: true,
+        ip: true,
+        port: true,
+        driver: true,
+        doorId: true,
+        isActive: true,
+      },
+    });
+
+    return NextResponse.json(created);
+  } catch (err) {
+    return authErrorResponse(err);
   }
-
-  const allowed = new Set(["ZKTECO_PULL", "ZKTECO_PUSH", "GENERIC"]);
-  const safeDriver = allowed.has(driver) ? driver : "ZKTECO_PULL";
-
-  const created = await prisma.device.create({
-    data: {
-      companyId,
-      branchId,
-      name,
-      ip,
-      port,
-      driver: safeDriver as any,
-      isActive: true,
-    },
-    select: {
-      id: true,
-      branchId: true,
-      name: true,
-      ip: true,
-      port: true,
-      driver: true,
-      doorId: true,
-      isActive: true,
-    },
-  });
-
-  return NextResponse.json(created);
 }

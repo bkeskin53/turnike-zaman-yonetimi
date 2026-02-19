@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { DateTime } from "luxon";
+import { requireRole } from "@/src/auth/guard";
 import { prisma } from "@/src/repositories/prisma";
 import { getActiveCompanyId, getCompanyBundle } from "@/src/services/company.service";
 import { monthlyAnomaliesToCsv } from "@/src/services/reports/monthlyReport.service";
+import { authErrorResponse } from "@/src/utils/api";
 
 function parseMonth(v: string | null): string | null {
   const s = (v ?? "").trim();
@@ -20,24 +22,28 @@ function monthRangeLocal(month: string, tz: string) {
 }
 
 export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const month = parseMonth(url.searchParams.get("month"));
-  if (!month) return NextResponse.json({ error: "Invalid month. Expected yyyy-MM" }, { status: 400 });
+  try {
+    // Read-only export (must be authenticated)
+    await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN", "HR_OPERATOR", "SUPERVISOR"]);
 
-  const companyId = await getActiveCompanyId();
-  const bundle = await getCompanyBundle();
-  const tz = bundle.policy?.timezone || "Europe/Istanbul";
-  const { startUTC, endUTC } = monthRangeLocal(month, tz);
+    const url = new URL(req.url);
+    const month = parseMonth(url.searchParams.get("month"));
+    if (!month) return NextResponse.json({ error: "Invalid month. Expected yyyy-MM" }, { status: 400 });
 
-  const rows = await prisma.dailyAttendance.findMany({
-    where: {
-      companyId,
-      workDate: { gte: startUTC, lt: endUTC },
-      anomalies: { isEmpty: false },
-    },
-    include: { employee: true },
-    orderBy: [{ workDate: "asc" }, { employeeId: "asc" }],
-  });
+    const companyId = await getActiveCompanyId();
+    const bundle = await getCompanyBundle();
+    const tz = bundle.policy?.timezone || "Europe/Istanbul";
+    const { startUTC, endUTC } = monthRangeLocal(month, tz);
+
+    const rows = await prisma.dailyAttendance.findMany({
+      where: {
+        companyId,
+        workDate: { gte: startUTC, lt: endUTC },
+        anomalies: { isEmpty: false },
+      },
+     include: { employee: true },
+      orderBy: [{ workDate: "asc" }, { employeeId: "asc" }],
+    });
 
   // ✅ manualOverrideApplied: DailyAttendance'da alan yok.
   // Bunun yerine DailyAdjustment var mı? ve içinde override/not var mı? => derived boolean üret.
@@ -84,15 +90,18 @@ export async function GET(req: Request) {
     };
   });
 
-  const csv = monthlyAnomaliesToCsv(out);
-  const filename = `monthly_anomalies_${month}.csv`;
+    const csv = monthlyAnomaliesToCsv(out);
+    const filename = `monthly_anomalies_${month}.csv`;
 
-  return new NextResponse(csv, {
-    status: 200,
-    headers: {
-      "content-type": "text/csv; charset=utf-8",
-      "content-disposition": `attachment; filename="${filename}"`,
-      "cache-control": "no-store",
-    },
-  });
+    return new NextResponse(csv, {
+      status: 200,
+      headers: {
+        "content-type": "text/csv; charset=utf-8",
+        "content-disposition": `attachment; filename="${filename}"`,
+        "cache-control": "no-store",
+      },
+    });
+  } catch (err) {
+    return authErrorResponse(err);
+  }
 }

@@ -10,7 +10,7 @@ import { DateTime } from "luxon";
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
     // Ensure ADMIN or HR role
-    await requireRole(["ADMIN", "HR"]);
+    await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR"]);
     const { id } = await ctx.params;
     if (!id) {
       return NextResponse.json({ error: "BAD_ID" }, { status: 400 });

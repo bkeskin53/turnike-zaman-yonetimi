@@ -127,7 +127,7 @@ export const simulatorDriver: DeviceSyncDriver = {
       const target = events[idx];
       const occurredAtMs = target.occurredAt.getTime();
 
-      if (unknownKind === "USER") {
+      if (unknownKind === "SUPERVISOR") {
         const deviceUserId = `SIM-USER-UNKNOWN-${args.device.id}-${idx}`;
         (events[idx] as any) = {
           occurredAt: target.occurredAt,

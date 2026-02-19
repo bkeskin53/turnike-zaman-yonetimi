@@ -1,28 +1,44 @@
 import { NextResponse } from "next/server";
+import { requireRole } from "@/src/auth/guard";
 import { prisma } from "@/src/repositories/prisma";
 import { getActiveCompanyId } from "@/src/services/company.service";
+import { authErrorResponse } from "@/src/utils/api";
 
 export async function GET() {
-  const companyId = await getActiveCompanyId();
+  try {
+    // Read-only master data (must be authenticated)
+    await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN", "HR_OPERATOR", "SUPERVISOR"]);
 
-  const rows = await prisma.door.findMany({
-    where: { companyId },
-    orderBy: [{ code: "asc" }],
-    select: {
-      id: true,
-      branchId: true,
-      code: true,
-      name: true,
-      role: true,
-      isActive: true,
-      defaultDirection: true, // ✅ eklendi
-    },
-  });
+    const companyId = await getActiveCompanyId();
 
-  return NextResponse.json(rows);
+    const rows = await prisma.door.findMany({
+      where: { companyId },
+      orderBy: [{ code: "asc" }],
+      select: {
+        id: true,
+        branchId: true,
+        code: true,
+        name: true,
+        role: true,
+        isActive: true,
+        defaultDirection: true, // ✅ eklendi
+      },
+    });
+
+    return NextResponse.json(rows);
+  } catch (err) {
+    return authErrorResponse(err);
+  }
 }
 
 export async function POST(req: Request) {
+  try {
+    // CONFIG: create door
+    await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN"]);
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   const companyId = await getActiveCompanyId();
   const body = await req.json().catch(() => ({} as any));
 

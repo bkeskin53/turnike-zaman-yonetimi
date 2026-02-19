@@ -34,7 +34,7 @@ function safeFilename(s: string) {
 }
 
 export async function GET(req: NextRequest) {
-  await requireRole(["ADMIN", "HR"]);
+  await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR"]);
 
   const { searchParams } = new URL(req.url);
   const hours = clampInt(searchParams.get("hours"), 24, 1, 168);

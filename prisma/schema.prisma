@@ -11,15 +11,57 @@ enum ImportProfileKind {
 }
 
 enum UserRole {
-  ADMIN
-  HR
-  USER
+  SYSTEM_ADMIN
+  HR_CONFIG_ADMIN
+  HR_OPERATOR
+  SUPERVISOR
+}
+
+/// Data visibility scope for limited roles (e.g. SUPERVISOR)
+enum UserDataScope {
+  ALL
+  BRANCH
+  EMPLOYEE_GROUP
+  EMPLOYEE_SUBGROUP
+}
+
+enum EmployeeActionType {
+  HIRE
+  TERMINATE
+  REHIRE
+  UPDATE
 }
 
 enum OffDayEntryBehavior {
   IGNORE
   FLAG
   COUNT_AS_OT
+}
+
+/// Policy grouping scope (SAP-benzeri: kural seti kimde geçerli?)
+enum PolicyAssignmentScope {
+  EMPLOYEE
+  EMPLOYEE_SUBGROUP
+  EMPLOYEE_GROUP
+  BRANCH
+}
+
+/// Shift-aware policy override scope (B-Model).
+enum ShiftPolicyAssignmentScope {
+  /// SHIFT-only override (applies to everyone on that shiftCode)
+  SHIFT
+  BRANCH_SHIFT
+  EMPLOYEE_GROUP_SHIFT
+  EMPLOYEE_SUBGROUP_SHIFT
+  EMPLOYEE_SHIFT
+}
+
+/// Period work schedule assignment scope (SAP: Period Work Schedule)
+enum WorkScheduleAssignmentScope {
+  EMPLOYEE
+  EMPLOYEE_SUBGROUP
+  EMPLOYEE_GROUP
+  BRANCH
 }
 
 enum EventDirection {
@@ -30,6 +72,9 @@ enum EventDirection {
 enum EventSource {
   MANUAL
   DEVICE
+  /// Internal only: bulk-generated events for automated testing.
+  /// Guarded by TEST_MODE and never enabled in production.
+  TEST_SEED
 }
 
 enum NormalizedStatus {
@@ -82,13 +127,19 @@ model User {
   id           String   @id @default(cuid())
   email        String   @unique @db.VarChar(320)
   passwordHash String   @db.VarChar(255)
-  role         UserRole @default(USER)
-  isActive     Boolean  @default(true)
+  role         UserRole @default(HR_OPERATOR)
+
+  dataScope                UserDataScope @default(ALL)
+  scopeBranchIds           String[]      @default([])
+  scopeEmployeeGroupIds    String[]      @default([])
+  scopeEmployeeSubgroupIds String[]      @default([])
+  isActive                 Boolean       @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([role])
+  @@index([dataScope])
   @@index([isActive])
 }
 
@@ -99,12 +150,15 @@ model Company {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  policy           CompanyPolicy?
-  employees        Employee[]
-  rawEvents        RawEvent[]
-  normalizedEvents NormalizedEvent[]
-  dailyAttendances DailyAttendance[]
-  dailyAdjustments DailyAdjustment[]
+  policy                 CompanyPolicy?
+  policyRuleSets         PolicyRuleSet[]
+  policyAssignments      PolicyAssignment[]
+  shiftPolicyAssignments ShiftPolicyAssignment[]
+  employees              Employee[]
+  rawEvents              RawEvent[]
+  normalizedEvents       NormalizedEvent[]
+  dailyAttendances       DailyAttendance[]
+  dailyAdjustments       DailyAdjustment[]
 
   branches Branch[]
   doors    Door[]
@@ -115,12 +169,21 @@ model Company {
   employeeLeaves    EmployeeLeave[]
   shiftTemplates    ShiftTemplate[]
 
+  employeeEmploymentPeriods EmployeeEmploymentPeriod[]
+  employeeActions           EmployeeAction[]
+
   importProfiles                  CompanyImportProfile[]
   integrationLogs                 IntegrationLog[]
   integrationEmployeeLinks        IntegrationEmployeeLink[]
   integrationLeaveLinks           IntegrationLeaveLink[]
   integrationWeeklyShiftPlanLinks IntegrationWeeklyShiftPlanLink[]
   integrationSecurityLogs         IntegrationSecurityLog[]
+  employeeGroups                  EmployeeGroup[]
+  employeeSubgroups               EmployeeSubgroup[]
+
+  workSchedulePatterns    WorkSchedulePattern[]
+  workScheduleAssignments WorkScheduleAssignment[]
+  workSchedulePatternDays WorkSchedulePatternDay[]
 }
 
 /// Security/audit log for blocked integration attempts (IP, auth, config).
@@ -309,10 +372,298 @@ model CompanyPolicy {
   /// - CLAMP_TO_SHIFT: segments are clamped to [shiftStart, shiftEnd] so early/late time doesn't inflate worked.
   workedCalculationMode WorkedCalculationMode @default(ACTUAL)
 
+  /// Enterprise: Overtime dynamic break.
+  /// Example: every 180 minutes of overtime => 30 minutes break deducted from payable overtime.
+  /// If either value is null, the feature is disabled.
+  otBreakInterval Int?
+  otBreakDuration Int?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+/// Workforce Segment (SAP: Employee Group)
+model EmployeeGroup {
+  id        String @id @default(cuid())
+  companyId String
+
+  /// Stable code (e.g. WHITE, BLUE)
+  code String @db.VarChar(50)
+  name String @db.VarChar(120)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  subgroups              EmployeeSubgroup[]
+  employees              Employee[]
+  policyAssignments      PolicyAssignment[]
+  shiftPolicyAssignments ShiftPolicyAssignment[]
+
+  workScheduleAssignments WorkScheduleAssignment[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+}
+
+/// Workforce Sub-Segment (SAP: Employee Subgroup)
+model EmployeeSubgroup {
+  id        String @id @default(cuid())
+  companyId String
+
+  groupId String
+
+  /// Stable code (e.g. WHITE_MANAGER, BLUE_NIGHT)
+  code String @db.VarChar(50)
+  name String @db.VarChar(120)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  group   EmployeeGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  employees              Employee[]
+  policyAssignments      PolicyAssignment[]
+  shiftPolicyAssignments ShiftPolicyAssignment[]
+
+  workScheduleAssignments WorkScheduleAssignment[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([companyId, groupId])
+}
+
+/// Period Work Schedule pattern (SAP: PWS / Work Schedule Rule)
+/// - Defines an N-day cycle mapped to ShiftTemplate ids.
+/// - referenceDate is the canonical anchor day of cycle index 0.
+model WorkSchedulePattern {
+  id        String @id @default(cuid())
+  companyId String
+
+  /// Stable code (e.g. VR01, MV01)
+  code String @db.VarChar(50)
+  name String @db.VarChar(120)
+
+  cycleLengthDays Int
+  referenceDate   DateTime @db.Date
+
+  /// Length = cycleLengthDays. Each entry is a ShiftTemplate.id.
+  /// NOTE: OFF handling is not encoded here yet; use an explicit OFF ShiftTemplate if needed.
+  dayShiftTemplateIds String[]
+
+  /// Enterprise OFF semantics: child rows (shiftTemplateId NULL => OFF)
+  days WorkSchedulePatternDay[]
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  assignments WorkScheduleAssignment[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([companyId, isActive])
+}
+
+/// Enterprise: day-level pattern rows (SAP-like).
+/// - dayIndex is 0..cycleLengthDays-1
+/// - shiftTemplateId NULL => OFF (must NOT fallback to Policy)
+model WorkSchedulePatternDay {
+  id        String @id @default(cuid())
+  companyId String
+
+  patternId       String
+  dayIndex        Int
+  shiftTemplateId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company       Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  pattern       WorkSchedulePattern @relation(fields: [patternId], references: [id], onDelete: Cascade)
+  shiftTemplate ShiftTemplate?      @relation(fields: [shiftTemplateId], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, patternId, dayIndex])
+  @@index([companyId])
+  @@index([companyId, patternId])
+  @@index([companyId, shiftTemplateId])
+}
+
+/// Period Work Schedule assignment (time-sliced).
+/// SAP-like precedence:
+/// - More specific scope should win (EMPLOYEE > SUBGROUP > GROUP > BRANCH)
+/// - Within same scope, higher priority wins.
+model WorkScheduleAssignment {
+  id        String @id @default(cuid())
+  companyId String
+
+  scope    WorkScheduleAssignmentScope
+  priority Int                         @default(0)
+
+  validFrom DateTime? @db.Date
+  validTo   DateTime? @db.Date
+
+  patternId String
+
+  employeeId         String?
+  employeeSubgroupId String?
+  employeeGroupId    String?
+  branchId           String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  pattern WorkSchedulePattern @relation(fields: [patternId], references: [id], onDelete: Cascade)
+
+  employee         Employee?         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeSubgroup EmployeeSubgroup? @relation(fields: [employeeSubgroupId], references: [id], onDelete: Cascade)
+  employeeGroup    EmployeeGroup?    @relation(fields: [employeeGroupId], references: [id], onDelete: Cascade)
+  branch           Branch?           @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([companyId, scope])
+  @@index([companyId, patternId])
+  @@index([companyId, employeeId])
+  @@index([companyId, employeeSubgroupId])
+  @@index([companyId, employeeGroupId])
+  @@index([companyId, branchId])
+  @@index([companyId, validFrom])
+  @@index([companyId, validTo])
+}
+
+/// Company-level policy rule set (policy group / variant).
+/// NOTE: CompanyPolicy remains the legacy/default single-policy record.
+model PolicyRuleSet {
+  id        String @id @default(cuid())
+  companyId String
+
+  /// Stable code for integrations / references (e.g. DEFAULT, WHITE_COLLAR, BLUE_COLLAR)
+  code String @db.VarChar(50)
+  name String @db.VarChar(120)
+
+  /// Rule fields (timezone stays company-level; this is evaluation rules only)
+  shiftStartMinute       Int
+  shiftEndMinute         Int
+  breakMinutes           Int
+  lateGraceMinutes       Int
+  earlyLeaveGraceMinutes Int
+
+  breakAutoDeductEnabled Boolean
+  offDayEntryBehavior    OffDayEntryBehavior
+  overtimeEnabled        Boolean
+  leaveEntryBehavior     OffDayEntryBehavior
+
+  graceAffectsWorked   Boolean?
+  exitConsumesBreak    Boolean?
+  maxSingleExitMinutes Int?
+  maxDailyExitMinutes  Int?
+  exitExceedAction     ExitExceedAction?
+
+  graceMode             GraceMode
+  workedCalculationMode WorkedCalculationMode
+  otBreakInterval       Int?
+  otBreakDuration       Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company                Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  assignments            PolicyAssignment[]
+  shiftPolicyAssignments ShiftPolicyAssignment[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+}
+
+/// Assignment of a policy rule set to an entity (Phase-1: EMPLOYEE only).
+model PolicyAssignment {
+  id        String @id @default(cuid())
+  companyId String
+
+  scope PolicyAssignmentScope
+
+  /// Target entity ids (based on scope)
+  employeeId         String?
+  employeeSubgroupId String?
+  employeeGroupId    String?
+  branchId           String?
+
+  ruleSetId String
+
+  /// Optional validity slicing (SAP-like). Stored as @db.Date.
+  validFrom DateTime? @db.Date
+  validTo   DateTime? @db.Date
+
+  /// Higher wins if multiple match (future-proof).
+  priority Int @default(100)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee         Employee?         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeSubgroup EmployeeSubgroup? @relation(fields: [employeeSubgroupId], references: [id], onDelete: Cascade)
+  employeeGroup    EmployeeGroup?    @relation(fields: [employeeGroupId], references: [id], onDelete: Cascade)
+  branch           Branch?           @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  ruleSet          PolicyRuleSet     @relation(fields: [ruleSetId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, scope])
+  @@index([companyId, employeeId])
+  @@index([companyId, employeeSubgroupId])
+  @@index([companyId, employeeGroupId])
+  @@index([companyId, branchId])
+  @@index([companyId, ruleSetId])
+}
+
+model ShiftPolicyAssignment {
+  id        String @id @default(cuid())
+  companyId String
+
+  scope ShiftPolicyAssignmentScope
+
+  /// Stable shift identity (ShiftTemplate.shiftCode)
+  shiftCode String @db.VarChar(80)
+
+  /// Target entity ids (based on scope)
+  employeeId         String?
+  employeeSubgroupId String?
+  employeeGroupId    String?
+  branchId           String?
+
+  ruleSetId String
+
+  /// Optional validity slicing (SAP-like). Stored as @db.Date.
+  validFrom DateTime? @db.Date
+  validTo   DateTime? @db.Date
+
+  /// Higher wins if multiple match.
+  priority Int @default(100)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee         Employee?         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeSubgroup EmployeeSubgroup? @relation(fields: [employeeSubgroupId], references: [id], onDelete: Cascade)
+  employeeGroup    EmployeeGroup?    @relation(fields: [employeeGroupId], references: [id], onDelete: Cascade)
+  branch           Branch?           @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  ruleSet          PolicyRuleSet     @relation(fields: [ruleSetId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, scope])
+  @@index([companyId, shiftCode])
+  @@index([companyId, shiftCode, employeeId])
+  @@index([companyId, shiftCode, employeeSubgroupId])
+  @@index([companyId, shiftCode, employeeGroupId])
+  @@index([companyId, shiftCode, branchId])
+  @@index([companyId, ruleSetId])
 }
 
 /// Types of employee leave.
@@ -422,6 +773,15 @@ model Employee {
   cardNo       String? @db.VarChar(100)
   deviceUserId String? @db.VarChar(100)
 
+  branchId String?
+  branch   Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  employeeGroupId    String?
+  employeeSubgroupId String?
+
+  employeeGroup    EmployeeGroup?    @relation(fields: [employeeGroupId], references: [id], onDelete: SetNull)
+  employeeSubgroup EmployeeSubgroup? @relation(fields: [employeeSubgroupId], references: [id], onDelete: SetNull)
+
   isActive     Boolean   @default(true)
   hiredAt      DateTime?
   terminatedAt DateTime?
@@ -438,9 +798,15 @@ model Employee {
   resolvedDeviceInboxEvents       DeviceInboxEvent[]               @relation("EmployeeResolvedDeviceInboxEvents")
   weeklyShiftPlans                WeeklyShiftPlan[]
   employeeLeaves                  EmployeeLeave[]
+  employmentPeriods               EmployeeEmploymentPeriod[]
+  employeeActions                 EmployeeAction[]
   integrationEmployeeLinks        IntegrationEmployeeLink[]
   integrationLeaveLinks           IntegrationLeaveLink[]
   integrationWeeklyShiftPlanLinks IntegrationWeeklyShiftPlanLink[]
+  policyAssignments               PolicyAssignment[]
+  shiftPolicyAssignments          ShiftPolicyAssignment[]
+
+  workScheduleAssignments WorkScheduleAssignment[]
 
   @@unique([companyId, employeeCode])
   @@unique([companyId, cardNo])
@@ -449,6 +815,57 @@ model Employee {
   @@index([isActive])
   @@index([companyId, cardNo])
   @@index([companyId, deviceUserId])
+  @@index([companyId, branchId])
+  @@index([companyId, employeeGroupId])
+  @@index([companyId, employeeSubgroupId])
+}
+
+/// Employment validity periods (SAP-like time-sliced employment records).
+/// - startDate / endDate are calendar dates stored as @db.Date.
+/// - endDate = null means "open-ended" (currently employed).
+model EmployeeEmploymentPeriod {
+  id         String @id @default(cuid())
+  companyId  String
+  employeeId String
+
+  startDate DateTime  @db.Date
+  endDate   DateTime? @db.Date
+
+  /// Optional HR reason / note (e.g., termination reason)
+  reason String? @db.VarChar(200)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, employeeId])
+  @@index([employeeId, startDate])
+  @@index([companyId, startDate])
+}
+
+/// HR audit trail for employee lifecycle actions (enterprise traceability).
+model EmployeeAction {
+  id         String @id @default(cuid())
+  companyId  String
+  employeeId String
+
+  type          EmployeeActionType
+  effectiveDate DateTime           @db.Date
+
+  note        String? @db.VarChar(200)
+  actorUserId String? @db.VarChar(64)
+  details     Json?
+
+  createdAt DateTime @default(now())
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, employeeId])
+  @@index([companyId, type])
+  @@index([companyId, effectiveDate])
 }
 
 model RawEvent {
@@ -460,6 +877,12 @@ model RawEvent {
   deviceId String?
 
   externalRef String? @db.VarChar(200)
+
+  /// Internal-only grouping for bulk test seeding.
+  /// When present, allows fast cleanup by batch.
+  batchId String? @db.VarChar(64)
+  /// Optional scenario note (e.g. MISSING_PUNCH_IN)
+  note    String? @db.VarChar(200)
 
   occurredAt DateTime
   direction  EventDirection
@@ -476,6 +899,7 @@ model RawEvent {
   normalized NormalizedEvent?
 
   @@unique([companyId, externalRef])
+  @@index([companyId, batchId])
   @@index([companyId, employeeId, occurredAt])
   @@index([companyId, doorId, occurredAt])
   @@index([companyId, deviceId, occurredAt])
@@ -515,11 +939,21 @@ model DailyAttendance {
   overtimeMinutes      Int @default(0)
   overtimeEarlyMinutes Int @default(0)
   overtimeLateMinutes  Int @default(0)
+  /// Enterprise: OT Dynamic Break meta (engine output)
+  otBreakCount         Int @default(0)
+  otBreakDeductMinutes Int @default(0)
   lateMinutes          Int @default(0)
   earlyLeaveMinutes    Int @default(0)
 
   status    DailyStatus @default(ABSENT)
   anomalies String[]    @default([])
+
+  // Shift meta (engine output, SINGLE SOURCE OF TRUTH for UI/debug)
+  shiftSource        String?  @db.VarChar(20) // POLICY | WEEK_TEMPLATE | DAY_TEMPLATE | CUSTOM
+  shiftSignature     String?  @db.VarChar(32) // "0900-1800" | "2200-0600+1"
+  shiftStartMinute   Int?
+  shiftEndMinute     Int?
+  shiftSpansMidnight Boolean?
 
   computedAt DateTime @default(now())
 
@@ -542,9 +976,15 @@ model Branch {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  company Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  doors   Door[]
-  devices Device[]
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  doors     Door[]
+  devices   Device[]
+  employees Employee[]
+
+  policyAssignments      PolicyAssignment[]
+  shiftPolicyAssignments ShiftPolicyAssignment[]
+
+  workScheduleAssignments WorkScheduleAssignment[]
 
   @@unique([companyId, code])
   @@index([companyId])
@@ -713,8 +1153,12 @@ model WeeklyShiftPlan {
 }
 
 model ShiftTemplate {
-  id            String   @id @default(cuid())
-  companyId     String
+  id        String @id @default(cuid())
+  companyId String
+  /// Stable shift identity code (integration-safe). Must NOT change when times change.
+  shiftCode String
+
+  /// Human signature (derived from times; can change when times change)
   signature     String
   startTime     String
   endTime       String
@@ -722,9 +1166,11 @@ model ShiftTemplate {
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
 
-  company     Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  weeklyPlans WeeklyShiftPlan[]
+  company                 Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  weeklyPlans             WeeklyShiftPlan[]
+  workSchedulePatternDays WorkSchedulePatternDay[]
 
+  @@unique([companyId, shiftCode])
   @@unique([companyId, signature])
   @@index([companyId])
 }

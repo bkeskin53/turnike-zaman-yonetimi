@@ -14,7 +14,7 @@ function boolEnv(v: string | undefined) {
 }
 
 export default async function IntegrationSettingsPage() {
-  await requireRole(["ADMIN"]);
+  await requireRole(["SYSTEM_ADMIN"]);
 
   const apiKey = String(process.env.INTEGRATION_API_KEY ?? "").trim();
   const allowlist = String(process.env.INTEGRATION_IP_ALLOWLIST ?? "").trim();

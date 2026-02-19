@@ -55,6 +55,197 @@ export async function buildDailyReportItems(params: {
   const employeeIds = Array.from(new Set(rows.map((r) => r.employeeId)));
 
   // ------------------------------------------------------------------
+  // Policy resolution meta for UI (runtime, no DB writes)
+  // Goal: show "Bugün hangi policy ruleset uygulandı?" as SAP-style transparency.
+  // This is a REPORT/VIEW helper and must not affect the attendance engine.
+  const employeeCtx = employeeIds.length
+    ? await prisma.employee.findMany({
+        where: { companyId, id: { in: employeeIds } },
+        select: { id: true, branchId: true, employeeGroupId: true, employeeSubgroupId: true },
+      })
+    : [];
+
+  const ctxByEmp = new Map<
+    string,
+    { branchId: string | null; employeeGroupId: string | null; employeeSubgroupId: string | null }
+  >();
+  const subgroupIds = new Set<string>();
+  const groupIds = new Set<string>();
+  const branchIds = new Set<string>();
+  for (const e of employeeCtx) {
+    ctxByEmp.set(e.id, {
+      branchId: e.branchId ?? null,
+      employeeGroupId: e.employeeGroupId ?? null,
+      employeeSubgroupId: e.employeeSubgroupId ?? null,
+    });
+    if (e.employeeSubgroupId) subgroupIds.add(e.employeeSubgroupId);
+    if (e.employeeGroupId) groupIds.add(e.employeeGroupId);
+    if (e.branchId) branchIds.add(e.branchId);
+  }
+
+  type ResolvedPolicyMeta = {
+    source: "EMPLOYEE" | "EMPLOYEE_SUBGROUP" | "EMPLOYEE_GROUP" | "BRANCH" | "COMPANY";
+    assignmentId: string | null;
+    ruleSetId: string | null;
+    ruleSetCode: string | null;
+    ruleSetName: string | null;
+  };
+
+  const [empAssignments, subgroupAssignments, groupAssignments, branchAssignments] = await Promise.all([
+    employeeIds.length
+      ? prisma.policyAssignment.findMany({
+          where: {
+            companyId,
+            scope: "EMPLOYEE",
+            employeeId: { in: employeeIds },
+            AND: [
+              { OR: [{ validFrom: null }, { validFrom: { lte: workDate } }] },
+              { OR: [{ validTo: null }, { validTo: { gte: workDate } }] },
+            ],
+          },
+          orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
+          select: {
+            id: true,
+            employeeId: true,
+            ruleSet: { select: { id: true, code: true, name: true } },
+          },
+        })
+      : [],
+    subgroupIds.size
+      ? prisma.policyAssignment.findMany({
+          where: {
+            companyId,
+            scope: "EMPLOYEE_SUBGROUP",
+            employeeSubgroupId: { in: Array.from(subgroupIds) },
+            AND: [
+              { OR: [{ validFrom: null }, { validFrom: { lte: workDate } }] },
+              { OR: [{ validTo: null }, { validTo: { gte: workDate } }] },
+            ],
+          },
+          orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
+          select: {
+            id: true,
+            employeeSubgroupId: true,
+            ruleSet: { select: { id: true, code: true, name: true } },
+          },
+        })
+      : [],
+    groupIds.size
+      ? prisma.policyAssignment.findMany({
+          where: {
+            companyId,
+            scope: "EMPLOYEE_GROUP",
+            employeeGroupId: { in: Array.from(groupIds) },
+            AND: [
+              { OR: [{ validFrom: null }, { validFrom: { lte: workDate } }] },
+              { OR: [{ validTo: null }, { validTo: { gte: workDate } }] },
+            ],
+          },
+          orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
+          select: {
+            id: true,
+            employeeGroupId: true,
+            ruleSet: { select: { id: true, code: true, name: true } },
+          },
+        })
+      : [],
+    branchIds.size
+      ? prisma.policyAssignment.findMany({
+          where: {
+            companyId,
+            scope: "BRANCH",
+            branchId: { in: Array.from(branchIds) },
+            AND: [
+              { OR: [{ validFrom: null }, { validFrom: { lte: workDate } }] },
+              { OR: [{ validTo: null }, { validTo: { gte: workDate } }] },
+            ],
+          },
+          orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
+          select: {
+            id: true,
+            branchId: true,
+            ruleSet: { select: { id: true, code: true, name: true } },
+          },
+        })
+      : [],
+  ]);
+
+  // Pick the first (highest priority / latest) assignment per key.
+  const empAssignByEmp = new Map<string, any>();
+  for (const a of empAssignments) {
+  if (!a.employeeId) continue;
+  if (!empAssignByEmp.has(a.employeeId)) empAssignByEmp.set(a.employeeId, a);
+}
+
+  const subgroupAssignById = new Map<string, any>();
+  for (const a of subgroupAssignments)
+    if (a.employeeSubgroupId && !subgroupAssignById.has(a.employeeSubgroupId)) subgroupAssignById.set(a.employeeSubgroupId, a);
+
+  const groupAssignById = new Map<string, any>();
+  for (const a of groupAssignments)
+    if (a.employeeGroupId && !groupAssignById.has(a.employeeGroupId)) groupAssignById.set(a.employeeGroupId, a);
+
+  const branchAssignById = new Map<string, any>();
+  for (const a of branchAssignments)
+    if (a.branchId && !branchAssignById.has(a.branchId)) branchAssignById.set(a.branchId, a);
+
+  function resolvePolicyMetaForEmployee(employeeId: string): ResolvedPolicyMeta {
+    const empA = empAssignByEmp.get(employeeId) ?? null;
+    if (empA) {
+      return {
+        source: "EMPLOYEE",
+        assignmentId: empA.id,
+        ruleSetId: empA.ruleSet?.id ?? null,
+        ruleSetCode: empA.ruleSet?.code ?? null,
+        ruleSetName: empA.ruleSet?.name ?? null,
+      };
+    }
+
+    const ctx = ctxByEmp.get(employeeId) ?? { branchId: null, employeeGroupId: null, employeeSubgroupId: null };
+
+    if (ctx.employeeSubgroupId) {
+      const sA = subgroupAssignById.get(ctx.employeeSubgroupId) ?? null;
+      if (sA) {
+        return {
+          source: "EMPLOYEE_SUBGROUP",
+          assignmentId: sA.id,
+          ruleSetId: sA.ruleSet?.id ?? null,
+          ruleSetCode: sA.ruleSet?.code ?? null,
+          ruleSetName: sA.ruleSet?.name ?? null,
+        };
+      }
+    }
+
+    if (ctx.employeeGroupId) {
+      const gA = groupAssignById.get(ctx.employeeGroupId) ?? null;
+      if (gA) {
+        return {
+          source: "EMPLOYEE_GROUP",
+          assignmentId: gA.id,
+          ruleSetId: gA.ruleSet?.id ?? null,
+          ruleSetCode: gA.ruleSet?.code ?? null,
+          ruleSetName: gA.ruleSet?.name ?? null,
+        };
+      }
+    }
+
+    if (ctx.branchId) {
+      const bA = branchAssignById.get(ctx.branchId) ?? null;
+      if (bA) {
+        return {
+          source: "BRANCH",
+          assignmentId: bA.id,
+          ruleSetId: bA.ruleSet?.id ?? null,
+          ruleSetCode: bA.ruleSet?.code ?? null,
+          ruleSetName: bA.ruleSet?.name ?? null,
+        };
+      }
+    }
+
+    return { source: "COMPANY", assignmentId: null, ruleSetId: null, ruleSetCode: null, ruleSetName: null };
+  }
+
+  // ------------------------------------------------------------------
   // Shift source for UI (Policy / Week Template / Day Template / Custom)
   // Batch fetch weekly plans for the same weekStartDate to avoid N+1.
   const weekStartDate = computeWeekStartUTC(date, tz);
@@ -287,9 +478,20 @@ export async function buildDailyReportItems(params: {
       overtimeMinutes: (r as any).overtimeMinutes ?? 0,
       overtimeEarlyMinutes: (r as any).overtimeEarlyMinutes ?? 0,
       overtimeLateMinutes: (r as any).overtimeLateMinutes ?? 0,
+      // Enterprise: OT Dynamic Break meta (engine output)
+      otBreakCount: (r as any).otBreakCount ?? 0,
+      otBreakDeductMinutes: (r as any).otBreakDeductMinutes ?? 0,
 
       anomalies: r.anomalies ?? [],
     };
+
+    // Policy meta (runtime transparency)
+    const pol = resolvePolicyMetaForEmployee(r.employeeId);
+    base.policySource = pol.source;
+    base.policyRuleSetId = pol.ruleSetId;
+    base.policyRuleSetCode = pol.ruleSetCode;
+    base.policyRuleSetName = pol.ruleSetName;
+    base.policyAssignmentId = pol.assignmentId;
 
     const adj = adjByEmp.get(r.employeeId) ?? null;
     const applied: any = applyDailyAdjustment(base, adj as any);
@@ -302,6 +504,10 @@ export async function buildDailyReportItems(params: {
     ) {
       applied.overtimeEarlyMinutes = 0;
       applied.overtimeLateMinutes = applied.overtimeMinutes ?? 0;
+
+      // Manual override breaks audit meaning of OT-break meta; zero it to avoid lying.
+      applied.otBreakCount = 0;
+      applied.otBreakDeductMinutes = 0;
     }
 
     const manualOverrideApplied =
@@ -313,11 +519,29 @@ export async function buildDailyReportItems(params: {
         adj.earlyLeaveMinutesOverride != null);
     applied.manualOverrideApplied = manualOverrideApplied;
 
-    // Shift meta (UI visibility only)
-    const shift = computeShiftBadge(r.employeeId);
-    applied.shiftSource = shift.shiftSource;
-    applied.shiftLabel = shift.shiftLabel;
-    applied.shiftBadge = shift.shiftBadge;
+    // Shift meta:
+    // Prefer engine-persisted values (SINGLE SOURCE OF TRUTH).
+    // Fallback to computed badge only for legacy rows that predate the new columns.
+    const persistedSig = (r as any).shiftSignature as string | null | undefined;
+    const persistedSrc = (r as any).shiftSource as any;
+    const persistedSpans = (r as any).shiftSpansMidnight as boolean | null | undefined;
+    if (persistedSig && persistedSrc) {
+      applied.shiftSource = persistedSrc;
+      applied.shiftLabel = persistedSig;
+      // Badge style same as existing visual language
+      const moon = persistedSpans ? " 🌙" : "";
+      const prefix =
+        persistedSrc === "DAY_TEMPLATE" ? "📌 " :
+        persistedSrc === "CUSTOM" ? "✏️ " :
+        persistedSrc === "WEEK_TEMPLATE" ? "📅 " :
+        "🧩 ";
+      applied.shiftBadge = `${prefix}${persistedSig}${moon}`;
+    } else {
+      const shift = computeShiftBadge(r.employeeId);
+      applied.shiftSource = shift.shiftSource;
+      applied.shiftLabel = shift.shiftLabel;
+      applied.shiftBadge = shift.shiftBadge;
+    }
 
     return applied;
   });

@@ -6,7 +6,7 @@ import { adminUpdateCompanyName, getCompanyBundle } from "@/src/services/company
 
 export async function GET() {
   try {
-    await requireRole(["ADMIN", "HR"]);
+    await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR"]);
     const data = await getCompanyBundle();
     return NextResponse.json(data);
   } catch (err) {
@@ -24,7 +24,7 @@ export async function GET() {
 
 export async function PUT(req: Request) {
   try {
-    await requireRole(["ADMIN"]);
+    await requireRole(["SYSTEM_ADMIN"]);
     const body = await req.json().catch(() => null);
     const name = (body?.name ?? "").toString().trim();
     if (!name) return NextResponse.json({ error: "name_required" }, { status: 400 });

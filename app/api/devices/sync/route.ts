@@ -1,10 +1,19 @@
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
+import { requireRole } from "@/src/auth/guard";
 import { getActiveCompanyId } from "@/src/services/company.service";
 import { syncDevice } from "@/src/services/deviceSync.service";
+import { authErrorResponse } from "@/src/utils/api";
 
 export async function POST(req: Request) {
+  try {
+    // OPS: device sync pulls events from devices
+    await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR"]);
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   const companyId = await getActiveCompanyId();
   const body = await req.json().catch(() => ({} as any));
 

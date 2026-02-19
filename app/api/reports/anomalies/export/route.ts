@@ -32,6 +32,8 @@ function fmtLocalDateTime(v: any, tz: string): string {
 
 function anomalyDetail(code: string): string {
   switch (code) {
+    case "LATE_OUT_CAPTURED":
+      return "Geç OUT yakalandı (pencere dışı, ertesi güne sarkan çıkış bugünü kapattı)";
     case "MISSING_PUNCH":
       return "Eksik punch (IN/OUT çifti tamamlanmamış)";
     case "MISSING_IN":
@@ -44,6 +46,10 @@ function anomalyDetail(code: string): string {
       return "Arka arkaya OUT (önceki OUT’tan sonra tekrar OUT)";
     case "ORPHAN_OUT":
       return "Yetim OUT (öncesinde kabul edilmiş IN yok)";
+    case "UNSCHEDULED_WORK":
+      return "Vardiya dışı fiili çalışma (planlanan vardiya ile uyuşmuyor)";
+    case "OUTSIDE_SHIFT_IGNORED":
+      return "Vardiya penceresi dışında punch (CLAMP: worked'e dahil edilmedi)";
     case "DUPLICATE_PUNCH":
       return "Duplicate punch";
     case "DUPLICATE_EVENT":

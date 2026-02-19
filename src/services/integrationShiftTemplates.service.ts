@@ -161,6 +161,7 @@ export async function integrationUpsertShiftTemplates(
         data: {
           companyId,
           signature,
+          shiftCode: signature,
           startTime: derived.startTime,
           endTime: derived.endTime,
           spansMidnight: derived.spansMidnight,

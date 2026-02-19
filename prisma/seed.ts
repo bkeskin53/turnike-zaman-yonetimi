@@ -58,6 +58,46 @@ async function main() {
     });
   }
 
+  // 1.1) Ensure DEFAULT policy rule set exists (Phase-1: grouping ready, behavior unchanged)
+  const basePolicy = await prisma.companyPolicy.findUnique({
+    where: { companyId },
+  });
+  if (basePolicy) {
+    await prisma.policyRuleSet.upsert({
+      where: {
+        companyId_code: { companyId, code: "DEFAULT" },
+      },
+      update: {},
+      create: {
+        companyId,
+        code: "DEFAULT",
+        name: "Default Rule Set",
+
+        shiftStartMinute: basePolicy.shiftStartMinute,
+        shiftEndMinute: basePolicy.shiftEndMinute,
+        breakMinutes: basePolicy.breakMinutes,
+        lateGraceMinutes: basePolicy.lateGraceMinutes,
+        earlyLeaveGraceMinutes: basePolicy.earlyLeaveGraceMinutes,
+
+        breakAutoDeductEnabled: basePolicy.breakAutoDeductEnabled,
+        offDayEntryBehavior: basePolicy.offDayEntryBehavior,
+        overtimeEnabled: basePolicy.overtimeEnabled,
+        leaveEntryBehavior: basePolicy.leaveEntryBehavior,
+
+        graceAffectsWorked: basePolicy.graceAffectsWorked,
+        exitConsumesBreak: basePolicy.exitConsumesBreak,
+        maxSingleExitMinutes: basePolicy.maxSingleExitMinutes,
+        maxDailyExitMinutes: basePolicy.maxDailyExitMinutes,
+        exitExceedAction: basePolicy.exitExceedAction,
+
+        graceMode: basePolicy.graceMode,
+        workedCalculationMode: basePolicy.workedCalculationMode,
+        otBreakInterval: basePolicy.otBreakInterval,
+        otBreakDuration: basePolicy.otBreakDuration,
+      },
+    });
+  }
+
   // 2) Seed admin
   const email = (process.env.SEED_ADMIN_EMAIL ?? "admin@local").toLowerCase();
   const password = process.env.SEED_ADMIN_PASSWORD ?? "Admin123!";
@@ -67,19 +107,51 @@ async function main() {
     where: { email },
     update: {
       passwordHash,
-      role: UserRole.ADMIN,
+      role: UserRole.SYSTEM_ADMIN,
       isActive: true,
     },
     create: {
       email,
       passwordHash,
-      role: UserRole.ADMIN,
+      role: UserRole.SYSTEM_ADMIN,
       isActive: true,
     },
     select: { id: true, email: true, role: true, isActive: true },
   });
 
   console.log("Seeded admin:", user);
+
+    // 2.1) Seed default enterprise roles (config / ops / supervisor)
+  const defaultPass = process.env.SEED_DEFAULT_PASSWORD ?? "Turnike123!";
+  const defaultHash = await bcrypt.hash(defaultPass, 12);
+
+  const configUser = await prisma.user.upsert({
+    where: { email: "config@local" },
+    update: { passwordHash: defaultHash, role: UserRole.HR_CONFIG_ADMIN, isActive: true },
+    create: { email: "config@local", passwordHash: defaultHash, role: UserRole.HR_CONFIG_ADMIN, isActive: true },
+    select: { id: true, email: true, role: true, isActive: true },
+  });
+
+  const opsUser = await prisma.user.upsert({
+    where: { email: "ops@local" },
+    update: { passwordHash: defaultHash, role: UserRole.HR_OPERATOR, isActive: true },
+    create: { email: "ops@local", passwordHash: defaultHash, role: UserRole.HR_OPERATOR, isActive: true },
+    select: { id: true, email: true, role: true, isActive: true },
+  });
+
+  const supervisorUser = await prisma.user.upsert({
+    where: { email: "supervisor@local" },
+    update: { passwordHash: defaultHash, role: UserRole.SUPERVISOR, isActive: true },
+    create: { email: "supervisor@local", passwordHash: defaultHash, role: UserRole.SUPERVISOR, isActive: true },
+    select: { id: true, email: true, role: true, isActive: true },
+  });
+
+  console.log("Seeded config:", configUser);
+  console.log("Seeded ops:", opsUser);
+  console.log("Seeded supervisor:", supervisorUser);
+  console.log("Default password for these 3 users:", defaultPass);
+
+  
   console.log("Active company id:", companyId);
 
   await prisma.$disconnect();

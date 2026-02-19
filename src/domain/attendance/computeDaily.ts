@@ -7,6 +7,9 @@ export type OffDayEntryBehavior = "IGNORE" | "FLAG" | "COUNT_AS_OT";
 export type ComputePolicy = {
   timezone?: string;
 
+  // Enterprise OFF flag coming from resolver (Pattern NULL day => OFF)
+  isOffDay?: boolean;
+
   shiftStartMinute?: number; // minutes since 00:00
   shiftEndMinute?: number;   // minutes since 00:00
 
@@ -50,6 +53,15 @@ export type ComputePolicy = {
    * - CLAMP_TO_SHIFT: segments are clamped to [shiftStart, shiftEnd] so early/late time doesn't inflate worked.
    */
   workedCalculationMode?: "ACTUAL" | "CLAMP_TO_SHIFT";
+
+  /**
+   * Overtime dynamic break (enterprise): deduct break minutes from computed overtime.
+   * Example: every 180 minutes of overtime -> 30 minutes break.
+   *
+   * If undefined, the feature is disabled.
+   */
+  otBreakInterval?: number;
+  otBreakDuration?: number;
 };
 
 export type ComputeEvent = {
@@ -67,6 +79,8 @@ export type DailyComputed = {
   overtimeMinutes: number;
   overtimeEarlyMinutes: number;
   overtimeLateMinutes: number;
+  otBreakCount: number;
+  otBreakDeductMinutes: number;
 
   /**
    * Status of the day:
@@ -80,7 +94,8 @@ export type DailyComputed = {
 };
 
 function toMinuteInt(n: number) {
-  return Math.max(0, Math.floor(n));
+  // En yakına yuvarla: ms/saniye kaymalarını personel aleyhine kırpma
+  return Math.max(0, Math.round(n));
 }
 
 function diffMinutes(a: Date, b: Date) {
@@ -141,6 +156,82 @@ function computeOutsideShiftMinutes(
   return outside;
 }
 
+export function computeOvertimeDynamicBreak(args: {
+  overtimeMinutes: number;
+  overtimeEarlyMinutes: number;
+  overtimeLateMinutes: number;
+  otBreakInterval?: number;
+  otBreakDuration?: number;
+}): {
+  overtimeMinutes: number;
+  overtimeEarlyMinutes: number;
+  overtimeLateMinutes: number;
+  otBreakCount: number;
+  otBreakDeductMinutes: number;
+} {
+  const interval = args.otBreakInterval;
+  const duration = args.otBreakDuration;
+
+  const base = () => ({
+    overtimeMinutes: args.overtimeMinutes,
+    overtimeEarlyMinutes: args.overtimeEarlyMinutes,
+    overtimeLateMinutes: args.overtimeLateMinutes,
+    otBreakCount: 0,
+    otBreakDeductMinutes: 0,
+  });
+
+  // Feature disabled unless both are positive ints.
+  if (!interval || !duration || interval <= 0 || duration <= 0) return base();
+  if (args.overtimeMinutes <= 0) return base();
+
+  const breakCount = Math.floor(args.overtimeMinutes / interval);
+  if (breakCount <= 0) return base();
+
+  const totalDeduct = breakCount * duration;
+  if (totalDeduct <= 0) return base();
+
+  let remaining = Math.min(totalDeduct, args.overtimeMinutes);
+  let late = args.overtimeLateMinutes;
+  let early = args.overtimeEarlyMinutes;
+
+  // Keep totals consistent: deduct from LATE first (more common for OT), then EARLY.
+  if (late > 0 && remaining > 0) {
+    const take = Math.min(late, remaining);
+    late -= take;
+    remaining -= take;
+  }
+  if (early > 0 && remaining > 0) {
+    const take = Math.min(early, remaining);
+    early -= take;
+    remaining -= take;
+  }
+
+  const total = Math.max(0, early + late);
+  return {
+    overtimeMinutes: total,
+    overtimeEarlyMinutes: early,
+    overtimeLateMinutes: late,
+    otBreakCount: breakCount,
+    otBreakDeductMinutes: Math.min(totalDeduct, args.overtimeMinutes),
+  };
+}
+
+// Backwards-compatible helper (keeps old call sites valid if any remain)
+export function applyOvertimeDynamicBreak(args: {
+  overtimeMinutes: number;
+  overtimeEarlyMinutes: number;
+  overtimeLateMinutes: number;
+  otBreakInterval?: number;
+  otBreakDuration?: number;
+}): { overtimeMinutes: number; overtimeEarlyMinutes: number; overtimeLateMinutes: number } {
+  const r = computeOvertimeDynamicBreak(args);
+  return {
+    overtimeMinutes: r.overtimeMinutes,
+    overtimeEarlyMinutes: r.overtimeEarlyMinutes,
+    overtimeLateMinutes: r.overtimeLateMinutes,
+  };
+}
+
 export function computeDailyAttendance(input: {
   date: string; // YYYY-MM-DD
   timezone: string;
@@ -190,12 +281,16 @@ export function computeDailyAttendance(input: {
   const shiftEndUtc = shiftEnd.toUTC().toJSDate();
 
   const weekday = dayStart.weekday; // 1..7
-  const isOffDay = weekday === 6 || weekday === 7;
+  const isWeekendOff = weekday === 6 || weekday === 7;
+  const isOffDay = policy.isOffDay === true || isWeekendOff;
+
+  // OFF day: shift window clamp is meaningless; force ACTUAL to avoid weird clamp behavior.
+  const effectiveWorkedMode: "ACTUAL" | "CLAMP_TO_SHIFT" = isOffDay ? "ACTUAL" : workedCalculationMode;
 
   // worked = sum of valid IN->OUT segments
   let workedMinutes = 0;
   for (const seg of norm.segments) {
-    if (workedCalculationMode === "CLAMP_TO_SHIFT") {
+    if (effectiveWorkedMode === "CLAMP_TO_SHIFT") {
       const inAt = seg.inAt < shiftStartUtc ? shiftStartUtc : seg.inAt;
       const outAt = seg.outAt > shiftEndUtc ? shiftEndUtc : seg.outAt;
       if (outAt > inAt) {
@@ -228,7 +323,7 @@ export function computeDailyAttendance(input: {
       const shiftDuration = toMinuteInt(shiftEnd.diff(shiftStart, "minutes").minutes);
       const potentialTotal = workedMinutes + exitGapMinutes;
       const baseMinutes =
-        workedCalculationMode === "CLAMP_TO_SHIFT"
+        effectiveWorkedMode === "CLAMP_TO_SHIFT"
           ? Math.min(potentialTotal, shiftDuration)
           : potentialTotal;
       // Deduct whichever is greater: the configured break or the total exit gap.
@@ -248,6 +343,8 @@ export function computeDailyAttendance(input: {
   let overtimeMinutes = 0;
   let overtimeEarlyMinutes = 0;
   let overtimeLateMinutes = 0;
+  let otBreakCount = 0;
+  let otBreakDeductMinutes = 0;
 
   // Off day behavior
   if (isOffDay) {
@@ -265,6 +362,8 @@ export function computeDailyAttendance(input: {
         overtimeMinutes: 0,
         overtimeEarlyMinutes: 0,
         overtimeLateMinutes: 0,
+        otBreakCount: 0,
+        otBreakDeductMinutes: 0,
         status: "OFF",
         anomalies: [],
       };
@@ -281,6 +380,8 @@ export function computeDailyAttendance(input: {
         overtimeMinutes: 0,
         overtimeEarlyMinutes: 0,
         overtimeLateMinutes: 0,
+        otBreakCount: 0,
+        otBreakDeductMinutes: 0,
         status: "OFF",
         anomalies: Array.from(anomalies),
       };
@@ -289,15 +390,24 @@ export function computeDailyAttendance(input: {
     anomalies.add("OFF_DAY_WORK");
 
     if (offDayEntryBehavior === "COUNT_AS_OT") {
+      const otAdjusted = computeOvertimeDynamicBreak({
+        overtimeMinutes: workedMinutes,
+        overtimeEarlyMinutes: 0,
+        overtimeLateMinutes: workedMinutes,
+        otBreakInterval: policy.otBreakInterval,
+        otBreakDuration: policy.otBreakDuration,
+      });
       return {
         firstIn,
         lastOut,
         workedMinutes,
         lateMinutes: 0,
         earlyLeaveMinutes: 0,
-        overtimeMinutes: workedMinutes,
-        overtimeEarlyMinutes: 0,
-        overtimeLateMinutes: workedMinutes,
+        overtimeMinutes: otAdjusted.overtimeMinutes,
+        overtimeEarlyMinutes: otAdjusted.overtimeEarlyMinutes,
+        overtimeLateMinutes: otAdjusted.overtimeLateMinutes,
+        otBreakCount: otAdjusted.otBreakCount,
+        otBreakDeductMinutes: otAdjusted.otBreakDeductMinutes,
         status: "OFF",
         anomalies: Array.from(anomalies),
       };
@@ -313,13 +423,59 @@ export function computeDailyAttendance(input: {
       overtimeMinutes: 0,
       overtimeEarlyMinutes: 0,
       overtimeLateMinutes: 0,
+      otBreakCount: 0,
+      otBreakDeductMinutes: 0,
       status: "OFF",
       anomalies: Array.from(anomalies),
     };
   }
 
   // Regular day
-  const status: "PRESENT" | "ABSENT" = firstIn ? "PRESENT" : "ABSENT";
+  // Build anomaly set (we may enrich/override some raw-normalization anomalies below).
+  const anomalies = new Set(norm.anomalies);
+
+  // Detect whether any normalized IN→OUT segment overlaps the scheduled shift window.
+  // Used for premium mismatch classification and (in CLAMP mode) presence.
+  const hasAnySegment = norm.segments.length > 0;
+  let hasAnyOverlapWithShift = false;
+  if (hasAnySegment) {
+    for (const seg of norm.segments) {
+      const inAt = seg.inAt < shiftStartUtc ? shiftStartUtc : seg.inAt;
+      const outAt = seg.outAt > shiftEndUtc ? shiftEndUtc : seg.outAt;
+      if (outAt > inAt) {
+        hasAnyOverlapWithShift = true;
+        break;
+      }
+    }
+  }
+
+  // Premium anomaly classification:
+  // If there are segments but NONE overlaps the shift window, do not show ORPHAN_OUT.
+  // Instead, mark the day as "unscheduled work" (ACTUAL) or "outside shift ignored" (CLAMP).
+  if (hasAnySegment && !hasAnyOverlapWithShift) {
+    if (effectiveWorkedMode === "CLAMP_TO_SHIFT") {
+      anomalies.add("OUTSIDE_SHIFT_IGNORED");
+    } else {
+      anomalies.add("UNSCHEDULED_WORK");
+    }
+    anomalies.delete("ORPHAN_OUT");
+  }
+  
+  // IMPORTANT (CLAMP_TO_SHIFT):
+  // Presence should be derived from accepted work within the scheduled shift window.
+  // Otherwise, a shift-mismatched segment (e.g., day punches on a night shift) would
+  // incorrectly mark the day as PRESENT even though workedMinutes is clamped to 0.
+  let hasShiftOverlap = false;
+  if (firstIn && effectiveWorkedMode === "CLAMP_TO_SHIFT") {
+    hasShiftOverlap = hasAnyOverlapWithShift;
+  }
+  const status: "PRESENT" | "ABSENT" = firstIn
+    ? effectiveWorkedMode === "CLAMP_TO_SHIFT"
+      ? hasShiftOverlap
+        ? "PRESENT"
+        : "ABSENT"
+      : "PRESENT"
+    : "ABSENT";
 
   if (firstIn) {
     const firstLocal = DateTime.fromJSDate(firstIn, { zone: "utc" }).setZone(tz);
@@ -352,6 +508,21 @@ export function computeDailyAttendance(input: {
     }
 
     overtimeMinutes = overtimeEarlyMinutes + overtimeLateMinutes;
+
+    // Enterprise: overtime dynamic break deduction (parametric, per-company)
+    // Example: every 180 minutes of OT => 30 minutes break.
+    const otAdjusted = computeOvertimeDynamicBreak({
+      overtimeMinutes,
+      overtimeEarlyMinutes,
+      overtimeLateMinutes,
+      otBreakInterval: policy.otBreakInterval,
+      otBreakDuration: policy.otBreakDuration,
+    });
+    overtimeMinutes = otAdjusted.overtimeMinutes;
+    overtimeEarlyMinutes = otAdjusted.overtimeEarlyMinutes;
+    overtimeLateMinutes = otAdjusted.overtimeLateMinutes;
+    otBreakCount = otAdjusted.otBreakCount;
+    otBreakDeductMinutes = otAdjusted.otBreakDeductMinutes;
   }
 
   // ROUND_ONLY: grace minutes are only tolerance for late/early penalties.
@@ -411,7 +582,9 @@ export function computeDailyAttendance(input: {
     overtimeMinutes: status === "PRESENT" ? overtimeMinutes : 0,
     overtimeEarlyMinutes: status === "PRESENT" ? overtimeEarlyMinutes : 0,
     overtimeLateMinutes: status === "PRESENT" ? overtimeLateMinutes : 0,
+    otBreakCount: status === "PRESENT" ? otBreakCount : 0,
+    otBreakDeductMinutes: status === "PRESENT" ? otBreakDeductMinutes : 0,
     status,
-    anomalies: norm.anomalies,
+    anomalies: Array.from(anomalies),
   };
 }

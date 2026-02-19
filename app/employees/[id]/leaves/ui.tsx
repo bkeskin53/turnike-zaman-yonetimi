@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type LeaveItem = {
   id: string;
@@ -10,16 +10,186 @@ type LeaveItem = {
   note: string | null;
 };
 
+function cx(...xs: Array<string | false | null | undefined>) {
+  return xs.filter(Boolean).join(" ");
+}
+
+/* ---------- Weekly Plan ile aynı UI kit ---------- */
+
+function Card({
+  title,
+  description,
+  right,
+  children,
+  className,
+}: {
+  title: string;
+  description?: string;
+  right?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      className={cx(
+        "rounded-2xl border border-zinc-200/70 bg-white shadow-sm min-w-0 max-w-full",
+        "ring-1 ring-black/0",
+        className,
+      )}
+    >
+      <div className="flex items-start justify-between gap-4 border-b border-zinc-100 px-5 py-3 min-w-0 max-w-full">
+        <div className="min-w-0 max-w-full">
+          <h2 className="text-[15px] font-semibold text-zinc-900">{title}</h2>
+          {description ? (
+            <p className="mt-1 text-sm text-zinc-500">{description}</p>
+          ) : null}
+        </div>
+        {right ? <div className="shrink-0">{right}</div> : null}
+      </div>
+      <div className="px-5 py-3 min-w-0 max-w-full">{children}</div>
+    </section>
+  );
+}
+
+function Label({ children }: { children: React.ReactNode }) {
+  return <span className="text-xs font-medium text-zinc-500">{children}</span>;
+}
+
+function Button({
+  children,
+  onClick,
+  disabled,
+  variant = "primary",
+  className,
+  type = "button",
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+  variant?: "primary" | "secondary" | "danger" | "ghost";
+  className?: string;
+  type?: "button" | "submit";
+}) {
+  const base =
+    "inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium " +
+    "transition focus:outline-none focus:ring-2 focus:ring-zinc-900/10 disabled:opacity-50 disabled:cursor-not-allowed";
+  const styles =
+    variant === "primary"
+      ? "bg-zinc-900 text-white hover:bg-zinc-800"
+      : variant === "secondary"
+        ? "bg-zinc-100 text-zinc-900 hover:bg-zinc-200"
+        : variant === "danger"
+          ? "bg-red-600 text-white hover:bg-red-500"
+          : "bg-transparent text-zinc-900 hover:bg-zinc-100";
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      className={cx(base, styles, "shadow-sm", className)}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Input({
+  className,
+  ...props
+}: React.InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <input
+      {...props}
+      className={cx(
+        "h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-900",
+        "placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900/10",
+        className,
+      )}
+    />
+  );
+}
+
+function Select({
+  className,
+  ...props
+}: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <select
+      {...props}
+      className={cx(
+        "h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-900",
+        "focus:border-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900/10",
+        className,
+      )}
+    />
+  );
+}
+
+function Badge({
+  children,
+  tone = "info",
+}: {
+  children: React.ReactNode;
+  tone?: "info" | "warn" | "ok";
+}) {
+  const cls =
+    tone === "ok"
+      ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
+      : tone === "warn"
+        ? "bg-amber-50 text-amber-900 ring-amber-200"
+        : "bg-sky-50 text-sky-900 ring-sky-200";
+  return (
+    <span
+      className={cx(
+        "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1",
+        cls,
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+/* ---------- helpers ---------- */
+
+function typeLabel(t: string) {
+  switch (t) {
+    case "ANNUAL":
+      return "Yıllık";
+    case "SICK":
+      return "Rapor";
+    case "EXCUSED":
+      return "Mazeret";
+    case "UNPAID":
+      return "Ücretsiz";
+    default:
+      return t;
+  }
+}
+
+function typeTone(t: string): "info" | "warn" | "ok" {
+  if (t === "SICK") return "warn";
+  if (t === "ANNUAL") return "ok";
+  return "info";
+}
+
 export default function LeavesClient({ id }: { id: string }) {
   const [items, setItems] = useState<LeaveItem[]>([]);
   const [from, setFrom] = useState<string>("");
   const [to, setTo] = useState<string>("");
+
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
   const [type, setType] = useState<string>("ANNUAL");
   const [note, setNote] = useState<string>("");
+
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+  const [creating, setCreating] = useState<boolean>(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const filteredCount = useMemo(() => items.length, [items]);
 
   async function load() {
     setLoading(true);
@@ -28,10 +198,10 @@ export default function LeavesClient({ id }: { id: string }) {
       const params = new URLSearchParams();
       if (from) params.set("from", from);
       if (to) params.set("to", to);
-      const res = await fetch(
-        `/api/employees/${id}/leaves?${params.toString()}`,
-        { credentials: "include" }
-      );
+
+      const res = await fetch(`/api/employees/${id}/leaves?${params.toString()}`, {
+        credentials: "include",
+      });
       if (!res.ok) {
         const text = await res.text().catch(() => res.statusText);
         throw new Error(text || "Failed to load leaves");
@@ -50,9 +220,18 @@ export default function LeavesClient({ id }: { id: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  // Auto-dismiss notice
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), 4000);
+    return () => clearTimeout(t);
+  }, [notice]);
+
   async function create() {
-    if (!dateFrom || !dateTo || !type) return;
+    if (!dateFrom || !dateTo || !type || creating) return;
     setError(null);
+    setNotice(null);
+    setCreating(true);
     try {
       const res = await fetch(`/api/employees/${id}/leaves`, {
         method: "POST",
@@ -68,7 +247,9 @@ export default function LeavesClient({ id }: { id: string }) {
 
       if (res.status === 400) {
         const data = await res.json().catch(() => null);
-        setError(data?.message ?? "İzin başlangıç tarihi bitiş tarihinden büyük olamaz.");
+        setError(
+          data?.message ?? "İzin başlangıç tarihi bitiş tarihinden büyük olamaz.",
+        );
         return;
       }
 
@@ -77,22 +258,31 @@ export default function LeavesClient({ id }: { id: string }) {
         setError(data?.message ?? "Bu tarihlerde zaten izin kaydı var.");
         return;
       }
+
       if (!res.ok) {
         const text = await res.text().catch(() => res.statusText);
         throw new Error(text || "Create failed");
       }
+
       // Reset form and reload list
       setDateFrom("");
       setDateTo("");
       setType("ANNUAL");
       setNote("");
-     await load();
+      await load();
+      setNotice("İzin kaydı eklendi.");
     } catch (e: any) {
       setError(e?.message ?? "Create failed");
+    } finally {
+      setCreating(false);
     }
   }
 
   async function remove(leaveId: string) {
+    if (deletingId) return;
+    setError(null);
+    setNotice(null);
+    setDeletingId(leaveId);
     try {
       const res = await fetch(`/api/employees/${id}/leaves/${leaveId}`, {
         method: "DELETE",
@@ -103,125 +293,207 @@ export default function LeavesClient({ id }: { id: string }) {
         throw new Error(text || "Delete failed");
       }
       await load();
+      setNotice("İzin kaydı silindi.");
     } catch (e: any) {
       setError(e?.message ?? "Delete failed");
+    } finally {
+      setDeletingId(null);
     }
   }
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      {/* Filter and list section */}
-      <section
-        style={{ border: "1px solid #eee", borderRadius: 12, padding: 16 }}
-      >
-        <h2 style={{ fontSize: 18, fontWeight: 700 }}>Leave Records</h2>
-        <div
-          style={{
-            marginTop: 8,
-            display: "flex",
-            gap: 12,
-            flexWrap: "wrap",
-            alignItems: "center",
-          }}
-        >
-          <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <span>From</span>
-            <input
-              type="date"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-            />
-          </label>
-          <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <span>To</span>
-            <input
-              type="date"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-            />
-          </label>
-          <button onClick={load} disabled={loading}>
-            {loading ? "Loading..." : "Filter"}
-          </button>
+    <div className="grid gap-5 max-w-full min-w-0">
+      {error ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="font-semibold">İşlem sırasında hata</div>
+              <div className="mt-1 break-words text-red-800/90">{error}</div>
+            </div>
+            <Button variant="ghost" className="h-8 px-2" onClick={() => setError(null)}>
+              Kapat
+            </Button>
+          </div>
         </div>
-        <div style={{ marginTop: 12 }}>
-          {items.length === 0 ? (
-            <div>No leave records.</div>
-          ) : (
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+      ) : null}
+
+      {notice ? (
+        <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="font-semibold">Bilgi</div>
+              <div className="mt-1 break-words text-sky-800/90">{notice}</div>
+            </div>
+            <Button variant="ghost" className="h-8 px-2" onClick={() => setNotice(null)}>
+              Kapat
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Top layout: Filter + Create (Weekly Plan ruhu: iki kartlı düzen) */}
+      <div className="grid gap-5 lg:grid-cols-12 max-w-full min-w-0">
+        <div className="lg:col-span-5 min-w-0">
+          <Card
+            title="Filtre"
+            description="Tarih aralığına göre izin kayıtlarını listeleyin"
+            right={
+              <Badge tone={loading ? "warn" : "info"}>
+                {loading ? "Yükleniyor" : `${filteredCount} kayıt`}
+              </Badge>
+            }
+          >
+            <div className="grid gap-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="grid gap-1.5">
+                  <Label>Başlangıç</Label>
+                  <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+                </label>
+                <label className="grid gap-1.5">
+                  <Label>Bitiş</Label>
+                  <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+                </label>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Button variant="secondary" className="w-full sm:w-auto" onClick={load} disabled={loading}>
+                  {loading ? "Yükleniyor…" : "Filtrele"}
+                </Button>
+                {(from || to) ? (
+                  <Button
+                    variant="ghost"
+                    className="w-full sm:w-auto"
+                    onClick={() => {
+                      setFrom("");
+                      setTo("");
+                      // filtre temizleyince listeyi de yenileyelim
+                      setTimeout(load, 0);
+                    }}
+                  >
+                    Temizle
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          </Card>
+        </div>
+
+        <div className="lg:col-span-7 min-w-0">
+          <Card title="İzin Ekle" description="Yeni izin kaydı oluşturun">
+            <div className="grid gap-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="grid gap-1.5">
+                  <Label>Tarih (Başlangıç)</Label>
+                  <Input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                  />
+                </label>
+                <label className="grid gap-1.5">
+                  <Label>Tarih (Bitiş)</Label>
+                  <Input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                  />
+                </label>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="grid gap-1.5">
+                  <Label>Tür</Label>
+                  <Select value={type} onChange={(e) => setType(e.target.value)}>
+                    <option value="ANNUAL">ANNUAL</option>
+                    <option value="SICK">SICK</option>
+                    <option value="EXCUSED">EXCUSED</option>
+                    <option value="UNPAID">UNPAID</option>
+                  </Select>
+                </label>
+                <label className="grid gap-1.5">
+                  <Label>Not</Label>
+                  <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Opsiyonel" />
+                </label>
+              </div>
+
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Button
+                  className="w-full sm:w-auto"
+                  onClick={create}
+                  disabled={creating || !dateFrom || !dateTo || !type}
+                >
+                  {creating ? "Kaydediliyor…" : "İzin Ekle"}
+                </Button>
+                <Button
+                  variant="secondary"
+                  className="w-full sm:w-auto"
+                  onClick={() => {
+                    setDateFrom("");
+                    setDateTo("");
+                    setType("ANNUAL");
+                    setNote("");
+                    setError(null);
+                  }}
+                  disabled={creating}
+                >
+                  Temizle
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </div>
+      </div>
+
+      {/* List */}
+      <Card title="İzin Kayıtları" description="Personelin tarih bazlı izinleri">
+        {items.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-zinc-200 px-4 py-6 text-center text-sm text-zinc-500">
+            Kayıt yok.
+          </div>
+        ) : (
+          <div className="overflow-x-auto max-w-full min-w-0">
+            <table className="min-w-full border-separate border-spacing-0">
               <thead>
-                <tr>
-                  <th style={{ textAlign: "left", padding: 6 }}>From</th>
-                  <th style={{ textAlign: "left", padding: 6 }}>To</th>
-                  <th style={{ textAlign: "left", padding: 6 }}>Type</th>
-                  <th style={{ textAlign: "left", padding: 6 }}>Note</th>
-                  <th style={{ textAlign: "left", padding: 6 }}>Actions</th>
+                <tr className="text-left text-xs font-medium text-zinc-500">
+                  <th className="whitespace-nowrap border-b border-zinc-200/70 py-2 pr-4">Başlangıç</th>
+                  <th className="whitespace-nowrap border-b border-zinc-200/70 py-2 pr-4">Bitiş</th>
+                  <th className="whitespace-nowrap border-b border-zinc-200/70 py-2 pr-4">Tür</th>
+                  <th className="border-b border-zinc-200/70 py-2 pr-4">Not</th>
+                  <th className="whitespace-nowrap border-b border-zinc-200/70 py-2 text-right">İşlem</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((it) => (
-                  <tr key={it.id}>
-                    <td style={{ padding: 6 }}>{it.dateFrom}</td>
-                    <td style={{ padding: 6 }}>{it.dateTo}</td>
-                    <td style={{ padding: 6 }}>{it.type}</td>
-                    <td style={{ padding: 6 }}>{it.note ?? ""}</td>
-                    <td style={{ padding: 6 }}>
-                      <button onClick={() => remove(it.id)}>Delete</button>
+                  <tr key={it.id} className="text-sm text-zinc-900">
+                    <td className="whitespace-nowrap border-b border-zinc-100 py-2 pr-4 text-zinc-800">
+                      {it.dateFrom}
+                    </td>
+                    <td className="whitespace-nowrap border-b border-zinc-100 py-2 pr-4 text-zinc-800">
+                      {it.dateTo}
+                    </td>
+                    <td className="whitespace-nowrap border-b border-zinc-100 py-2 pr-4">
+                      <Badge tone={typeTone(it.type)}>{typeLabel(it.type)}</Badge>
+                    </td>
+                    <td className="border-b border-zinc-100 py-2 pr-4 text-zinc-700">
+                      {it.note ?? "—"}
+                    </td>
+                    <td className="whitespace-nowrap border-b border-zinc-100 py-2 text-right">
+                      <Button
+                        variant="danger"
+                        className="h-9 px-3"
+                        onClick={() => remove(it.id)}
+                        disabled={deletingId === it.id}
+                      >
+                        {deletingId === it.id ? "Siliniyor…" : "Sil"}
+                      </Button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          )}
-        </div>
-      </section>
-      {/* Create section */}
-      <section
-        style={{ border: "1px solid #eee", borderRadius: 12, padding: 16 }}
-      >
-        <h3 style={{ fontSize: 16, fontWeight: 700 }}>Add Leave</h3>
-        <div style={{ marginTop: 8, display: "grid", gap: 10 }}>
-         <label style={{ display: "grid", gap: 6 }}>
-            <span>Date From</span>
-            <input
-              type="date"
-              value={dateFrom}
-             onChange={(e) => setDateFrom(e.target.value)}
-            />
-          </label>
-          <label style={{ display: "grid", gap: 6 }}>
-            <span>Date To</span>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-            />
-          </label>
-          <label style={{ display: "grid", gap: 6 }}>
-            <span>Type</span>
-            <select
-              value={type}
-              onChange={(e) => setType(e.target.value)}
-            >
-             <option value="ANNUAL">ANNUAL</option>
-              <option value="SICK">SICK</option>
-              <option value="EXCUSED">EXCUSED</option>
-              <option value="UNPAID">UNPAID</option>
-            </select>
-          </label>
-          <label style={{ display: "grid", gap: 6 }}>
-            <span>Note</span>
-            <input
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-            />
-          </label>
-          <button onClick={create}>Add Leave</button>
-          {error && (
-            <div style={{ color: "#b00", marginTop: 8 }}>{error}</div>
-          )}
-        </div>
-      </section>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }
