@@ -1,5 +1,9 @@
 import { prisma } from "@/src/repositories/prisma";
 import { getActiveCompanyId, getCompanyBundle } from "@/src/services/company.service";
+import type {
+  AttendanceOwnershipMode,
+  UnscheduledWorkBehavior,
+} from "@prisma/client";
 
 function normalizeCode(code: string) {
   return String(code ?? "")
@@ -40,8 +44,6 @@ export async function getPolicyRuleSetById(id: string) {
       code: true,
       name: true,
 
-      shiftStartMinute: true,
-      shiftEndMinute: true,
       breakMinutes: true,
       lateGraceMinutes: true,
       earlyLeaveGraceMinutes: true,
@@ -62,6 +64,13 @@ export async function getPolicyRuleSetById(id: string) {
       otBreakInterval: true,
       otBreakDuration: true,
 
+      attendanceOwnershipMode: true,
+      minimumRestMinutes: true,
+      ownershipEarlyInMinutes: true,
+      ownershipLateOutMinutes: true,
+      ownershipNextShiftLookaheadMinutes: true,
+      unscheduledWorkBehavior: true,
+
       createdAt: true,
       updatedAt: true,
     },
@@ -70,7 +79,7 @@ export async function getPolicyRuleSetById(id: string) {
   return { item };
 }
 
-export async function updatePolicyRuleSet(id: string, patch: any) {
+export async function updatePolicyRuleSet(id: string, patch: any, opts?: { allowDefault?: boolean }) {
   const companyId = await getActiveCompanyId();
   const ruleSetId = String(id ?? "").trim();
   if (!ruleSetId) throw new Error("RULESET_ID_REQUIRED");
@@ -80,14 +89,12 @@ export async function updatePolicyRuleSet(id: string, patch: any) {
     select: { id: true, code: true },
   });
   if (!existing) throw new Error("RULESET_NOT_FOUND");
-  if (existing.code === "DEFAULT") throw new Error("DEFAULT_READONLY");
+  if (existing.code === "DEFAULT" && !opts?.allowDefault) throw new Error("DEFAULT_READONLY");
 
   // Only allow known fields (defensive)
   const data: any = {};
   const allow = [
     "name",
-    "shiftStartMinute",
-    "shiftEndMinute",
     "breakMinutes",
     "lateGraceMinutes",
     "earlyLeaveGraceMinutes",
@@ -104,6 +111,12 @@ export async function updatePolicyRuleSet(id: string, patch: any) {
     "workedCalculationMode",
     "otBreakInterval",
     "otBreakDuration",
+    "attendanceOwnershipMode",
+    "minimumRestMinutes",
+    "ownershipEarlyInMinutes",
+    "ownershipLateOutMinutes",
+    "ownershipNextShiftLookaheadMinutes",
+    "unscheduledWorkBehavior",
   ];
   for (const k of allow) {
     if (Object.prototype.hasOwnProperty.call(patch ?? {}, k)) data[k] = patch[k];
@@ -144,8 +157,6 @@ export async function createPolicyRuleSetFromCompanyPolicy(input: { code: string
       name,
 
       // Copy evaluation rules from CompanyPolicy (timezone company-level kalır)
-      shiftStartMinute: base.shiftStartMinute,
-      shiftEndMinute: base.shiftEndMinute,
       breakMinutes: base.breakMinutes,
       lateGraceMinutes: base.lateGraceMinutes,
       earlyLeaveGraceMinutes: base.earlyLeaveGraceMinutes,
@@ -165,6 +176,15 @@ export async function createPolicyRuleSetFromCompanyPolicy(input: { code: string
       workedCalculationMode: base.workedCalculationMode,
       otBreakInterval: base.otBreakInterval ?? null,
       otBreakDuration: base.otBreakDuration ?? null,
+
+      attendanceOwnershipMode:
+        (base.attendanceOwnershipMode as AttendanceOwnershipMode | null) ?? "INSTANCE_SCORING",
+      minimumRestMinutes: base.minimumRestMinutes ?? 660,
+      ownershipEarlyInMinutes: base.ownershipEarlyInMinutes ?? 180,
+      ownershipLateOutMinutes: base.ownershipLateOutMinutes ?? 120,
+      ownershipNextShiftLookaheadMinutes: base.ownershipNextShiftLookaheadMinutes ?? 0,
+      unscheduledWorkBehavior:
+        (base.unscheduledWorkBehavior as UnscheduledWorkBehavior | null) ?? "FLAG_ONLY",
     },
     select: { id: true, code: true, name: true, createdAt: true },
   });

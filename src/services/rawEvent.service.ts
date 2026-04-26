@@ -1,4 +1,5 @@
 import { EventDirection } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { getActiveCompanyId, getCompanyBundle } from "@/src/services/company.service";
 import { createRawEvent, listRawEvents } from "@/src/repositories/rawEvent.repo";
 import { prisma } from "@/src/repositories/prisma";
@@ -124,8 +125,14 @@ export async function getEvents(filter: {
   date?: string;
   doorId?: string;
   deviceId?: string;
+  employeeWhere?: Prisma.EmployeeWhereInput | null;
 }) {
   const companyId = await getActiveCompanyId();
-  const items = await listRawEvents(companyId, filter);
+  const bundle = await getCompanyBundle();
+  const tz = bundle.policy?.timezone || "Europe/Istanbul";
+  const items = await listRawEvents(companyId, {
+    ...filter,
+    timezone: tz,
+  });
   return { items };
 }

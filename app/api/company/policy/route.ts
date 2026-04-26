@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/src/auth/guard";
 import { authErrorResponse } from "@/src/utils/api";
-import { updateCompanyPolicy } from "@/src/services/company.service";
+import { getActiveCompanyId, updateCompanyPolicy } from "@/src/services/company.service";
+import { writeAudit } from "@/src/audit/writeAudit";
+import { AuditAction, AuditTargetType, UserRole } from "@prisma/client";
+import { markRecomputeRequired } from "@/src/services/recomputeRequired.service";
+import { RecomputeReason } from "@prisma/client";
 
 /**
  * Yardımcılar
@@ -33,9 +37,15 @@ type ExitExceedAction = (typeof EXIT_ACTIONS)[number];
 const WORKED_MODES = ["ACTUAL", "CLAMP_TO_SHIFT"] as const;
 type WorkedCalculationMode = (typeof WORKED_MODES)[number];
 
+const OWNERSHIP_MODES = ["WINDOW", "INSTANCE_SCORING"] as const;
+type AttendanceOwnershipMode = (typeof OWNERSHIP_MODES)[number];
+
+const UNSCHEDULED_WORK_BEHAVIORS = ["IGNORE", "FLAG_ONLY", "COUNT_AS_OT"] as const;
+type UnscheduledWorkBehavior = (typeof UNSCHEDULED_WORK_BEHAVIORS)[number];
+
 export async function PUT(req: Request) {
   try {
-    await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN"]);
+    const session = await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN"]);
     const body = await req.json().catch(() => null);
 
     /**
@@ -55,6 +65,16 @@ export async function PUT(req: Request) {
     const wcm = body?.workedCalculationMode;
     const workedCalculationMode =
       WORKED_MODES.includes(wcm) ? (wcm as WorkedCalculationMode) : undefined;
+
+    const aom = body?.attendanceOwnershipMode;
+    const attendanceOwnershipMode =
+      OWNERSHIP_MODES.includes(aom) ? (aom as AttendanceOwnershipMode) : undefined;
+
+    const uwb = body?.unscheduledWorkBehavior;
+    const unscheduledWorkBehavior =
+      UNSCHEDULED_WORK_BEHAVIORS.includes(uwb)
+        ? (uwb as UnscheduledWorkBehavior)
+        : undefined;
 
     /**
      * Payload (senin pattern'in korunuyor)
@@ -125,12 +145,48 @@ export async function PUT(req: Request) {
         EXIT_ACTIONS.includes(body?.exitExceedAction)
           ? (body.exitExceedAction as ExitExceedAction)
           : undefined,
+      attendanceOwnershipMode,
+      minimumRestMinutes: toIntOrNullOrUndefined(body?.minimumRestMinutes) ?? undefined,
+      ownershipEarlyInMinutes: toIntOrNullOrUndefined(body?.ownershipEarlyInMinutes) ?? undefined,
+      ownershipLateOutMinutes: toIntOrNullOrUndefined(body?.ownershipLateOutMinutes) ?? undefined,
+      ownershipNextShiftLookaheadMinutes:
+        toIntOrNullOrUndefined(body?.ownershipNextShiftLookaheadMinutes) ?? undefined,
+      unscheduledWorkBehavior,
 
       // Leave-day punch handling behavior
       leaveEntryBehavior,
     };
 
     const data = await updateCompanyPolicy(payload);
+
+    const changedKeys = Object.entries(payload)
+      .filter(([, v]) => v !== undefined)
+      .map(([k]) => k);
+
+    await writeAudit({
+      req,
+      actorUserId: session.userId,
+      actorRole: session.role as unknown as UserRole,
+      action: AuditAction.POLICY_UPDATE,
+      targetType: AuditTargetType.POLICY,
+      targetId: "company_policy",
+      details: {
+        route: "/api/company/policy",
+        changedKeys,
+      },
+    });
+
+    // Recompute orchestration v1 (no guessing):
+    // Policy changes can affect past/future, so keep range unknown (null).
+    const companyId = await getActiveCompanyId();
+    await markRecomputeRequired({
+      companyId,
+      reason: RecomputeReason.POLICY_UPDATE,
+      createdByUserId: session.userId,
+      rangeStartDayKey: null,
+      rangeEndDayKey: null,
+    });
+
     return NextResponse.json(data);
   } catch (err) {
     return authErrorResponse(err) ??

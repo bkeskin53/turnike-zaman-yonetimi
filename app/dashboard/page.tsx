@@ -28,10 +28,40 @@ function Badge({
   );
 }
 
+function sectionCardCls(extra?: string) {
+  return [
+    "rounded-[24px]",
+    "border border-zinc-300/70",
+    "bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(248,250,252,0.96)_100%)]",
+    "shadow-[0_10px_26px_rgba(15,23,42,0.055)]",
+    "ring-1 ring-white/70",
+    extra ?? "",
+  ].join(" ");
+}
+
 function dayStripBg(tone: "ok" | "warn" | "danger") {
-  if (tone === "danger") return "border-red-200 bg-gradient-to-r from-red-50/70 to-white";
-  if (tone === "warn") return "border-amber-200 bg-gradient-to-r from-amber-50/70 to-white";
-  return "border-emerald-200 bg-gradient-to-r from-emerald-50/70 to-white";
+  if (tone === "danger") {
+    return [
+      "border-red-300/60",
+      "bg-[radial-gradient(circle_at_top_right,rgba(239,68,68,0.18),transparent_32%),linear-gradient(135deg,rgba(255,255,255,0.98)_0%,rgba(254,242,242,0.96)_55%,rgba(255,255,255,0.98)_100%)]",
+      "shadow-[0_10px_28px_rgba(239,68,68,0.10)]",
+      "ring-1 ring-white/70",
+    ].join(" ");
+  }
+  if (tone === "warn") {
+    return [
+      "border-amber-300/60",
+      "bg-[radial-gradient(circle_at_top_right,rgba(245,158,11,0.16),transparent_32%),linear-gradient(135deg,rgba(255,255,255,0.98)_0%,rgba(255,251,235,0.96)_55%,rgba(255,255,255,0.98)_100%)]",
+      "shadow-[0_10px_28px_rgba(245,158,11,0.10)]",
+      "ring-1 ring-white/70",
+    ].join(" ");
+  }
+  return [
+    "border-emerald-300/55",
+    "bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.16),transparent_32%),linear-gradient(135deg,rgba(255,255,255,0.98)_0%,rgba(236,253,245,0.96)_55%,rgba(255,255,255,0.98)_100%)]",
+    "shadow-[0_10px_28px_rgba(16,185,129,0.10)]",
+    "ring-1 ring-white/70",
+  ].join(" ");
 }
 
 function Pill({
@@ -147,31 +177,119 @@ function KpiCard(props: {
             ? "border-red-200 bg-red-50 text-red-700"
             : "border-zinc-200 bg-zinc-50 text-zinc-700";
 
+            const cardSurfaceCls =
+    accent === "indigo"
+      ? [
+          "border-indigo-300/65",
+          "bg-[linear-gradient(135deg,rgba(59,130,246,0.96)_0%,rgba(37,99,235,0.94)_58%,rgba(30,64,175,0.96)_100%)]",
+          "text-white",
+          "shadow-[0_14px_34px_rgba(37,99,235,0.18)]",
+          "ring-1 ring-white/20",
+        ].join(" ")
+      : accent === "amber"
+        ? [
+            "border-amber-300/70",
+            "bg-[linear-gradient(135deg,rgba(255,247,237,0.98)_0%,rgba(254,240,138,0.92)_55%,rgba(245,158,11,0.92)_100%)]",
+            "text-amber-950",
+            "shadow-[0_14px_34px_rgba(245,158,11,0.15)]",
+            "ring-1 ring-white/55",
+          ].join(" ")
+        : accent === "red"
+          ? [
+              "border-red-300/70",
+              "bg-[linear-gradient(135deg,rgba(255,245,245,0.98)_0%,rgba(252,165,165,0.92)_55%,rgba(239,68,68,0.92)_100%)]",
+              "text-red-950",
+              "shadow-[0_14px_34px_rgba(239,68,68,0.15)]",
+              "ring-1 ring-white/55",
+            ].join(" ")
+          : accent === "emerald"
+            ? [
+                "border-emerald-300/60",
+                "bg-[linear-gradient(135deg,rgba(255,255,255,0.98)_0%,rgba(209,250,229,0.92)_55%,rgba(110,231,183,0.88)_100%)]",
+                "text-emerald-950",
+                "shadow-[0_12px_28px_rgba(16,185,129,0.10)]",
+                "ring-1 ring-white/65",
+              ].join(" ")
+            : [
+                "border-zinc-300/70",
+                "bg-[linear-gradient(135deg,rgba(255,255,255,0.98)_0%,rgba(244,244,245,0.98)_60%,rgba(228,228,231,0.95)_100%)]",
+                "text-zinc-900",
+                "shadow-[0_12px_28px_rgba(15,23,42,0.06)]",
+                "ring-1 ring-white/70",
+              ].join(" ");
+
+  const titleCls =
+    accent === "indigo"
+      ? "text-white/80"
+      : accent === "red"
+        ? "text-red-950/70"
+        : accent === "amber"
+          ? "text-amber-950/70"
+          : "text-zinc-600";
+
+  const valueCls = props.valueClassName
+    ? props.valueClassName
+    : accent === "indigo"
+      ? "mt-2 text-4xl font-semibold tracking-tight text-white"
+      : tone === "danger"
+        ? "mt-2 text-4xl font-semibold tracking-tight text-red-700"
+        : "mt-2 text-4xl font-semibold tracking-tight";
+
+  const subCls =
+    accent === "indigo"
+      ? "text-white/80"
+      : accent === "red"
+        ? "text-red-950/70"
+        : accent === "amber"
+          ? "text-amber-950/75"
+          : "text-zinc-600";
+
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white/90 p-4 shadow-sm">
+    <div className={`group relative overflow-hidden rounded-[24px] border p-5 md:p-6 ${cardSurfaceCls}`}>
+      <div className="pointer-events-none absolute inset-0 opacity-70">
+        <div className="absolute -right-10 -top-10 h-36 w-36 rounded-full bg-white/10 blur-2xl" />
+        <div className="absolute bottom-0 right-0 h-24 w-40 translate-y-8 rounded-full bg-white/10 blur-2xl" />
+      </div>
+      <div className="pointer-events-none absolute right-4 top-4 h-16 w-16 rounded-2xl border border-white/20 bg-white/10 opacity-40 blur-[1px]" />
       <div className="flex items-start gap-3">
         <div
           className={
-            `grid h-10 w-10 place-items-center rounded-xl border ${accentCls}`
+            `relative grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-2xl border shadow-sm ${
+              accent === "indigo"
+                ? "border-white/20 bg-white/12 text-white"
+                : accent === "amber"
+                  ? "border-white/55 bg-white/68 text-amber-900"
+                  : accent === "red"
+                    ? "border-white/55 bg-white/72 text-red-700"
+                    : accent === "emerald"
+                      ? "border-emerald-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.92)_0%,rgba(236,253,245,0.92)_100%)] text-emerald-700"
+                      : "border-zinc-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(244,244,245,0.92)_100%)] text-zinc-700"
+            }`
           }
         >
+          <span
+            className={`pointer-events-none absolute inset-0 ${
+              accent === "indigo"
+                ? "bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.16),transparent_52%)]"
+                : accent === "amber"
+                  ? "bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.16),transparent_52%)]"
+                  : accent === "red"
+                    ? "bg-[radial-gradient(circle_at_top_left,rgba(248,113,113,0.16),transparent_52%)]"
+                    : accent === "emerald"
+                      ? "bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.14),transparent_52%)]"
+                      : "bg-[radial-gradient(circle_at_top_left,rgba(161,161,170,0.12),transparent_52%)]"
+            }`}
+          />
+          <span className="pointer-events-none absolute right-1.5 top-1.5 h-3.5 w-3.5 rounded-full bg-white/35 blur-[1px]" />
           {props.icon}
         </div>
         <div className="min-w-0">
-          <div className="text-xs text-zinc-500">{props.title}</div>
-          <div
-            className={
-              props.valueClassName
-                ? props.valueClassName
-                : tone === "danger"
-                  ? "mt-2 text-3xl font-semibold text-red-700"
-                  : "mt-2 text-3xl font-semibold"
-            }
-          >            
+          <div className={`text-[11px] font-semibold uppercase tracking-[0.1em] ${titleCls}`}>{props.title}</div>
+          <div className={valueCls}>            
             {props.value}
           </div>
-          {props.subline ? <div className="mt-2 text-xs text-zinc-500">{props.subline}</div> : null}
-          {props.footnote ? <div className="mt-1 text-xs text-zinc-500">{props.footnote}</div> : null}
+          {props.subline ? <div className={`mt-3 text-[12px] leading-5 ${subCls}`}>{props.subline}</div> : null}
+          {props.footnote ? <div className={`mt-2 text-[11px] ${subCls}`}>{props.footnote}</div> : null}
         </div>
       </div>
     </div>
@@ -238,31 +356,31 @@ export default async function DashboardPage() {
       subtitle={`${data.company.name} • ${data.todayLocal} • TZ: ${data.tz}`}
     >
       {/* Page intro (micro-guidance) */}
-      <section className="mb-3 text-xs text-zinc-500">
+      <section className="mb-4 text-[13px] text-zinc-500">
         Bu ekran günün özetini gösterir. Sorun varsa önce <span className="font-medium">Günlük Durum</span> raporuna bakın.
       </section>
       {/* DAY STATUS STRIP (UI-only, no layout/scroll changes) */}
-      <section className={`rounded-2xl border p-4 shadow-sm ${dayStripBg(dayTone)}`}>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <section className={`rounded-[26px] border px-5 py-5 md:px-6 md:py-6 ${dayStripBg(dayTone)}`}>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <Badge tone={dayTone}>
                 {dayTone === "danger" ? "KRİTİK" : dayTone === "warn" ? "UYARI" : "OK"}
               </Badge>
-              <div className="text-sm font-semibold">{dayTitle}</div>
+              <div className="text-[17px] font-semibold tracking-tight text-zinc-900">{dayTitle}</div>
             </div>
-            <div className="mt-1 text-xs text-zinc-500">{dayDesc}</div>
+            <div className="mt-2 max-w-3xl text-[13px] leading-6 text-zinc-600">{dayDesc}</div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2.5">
             <a
               href="/reports/daily"
               className={`rounded-xl px-3 py-2 text-xs font-medium ${
                 dayTone === "danger"
                   ? "bg-red-600 text-white hover:bg-red-700"
                   : dayTone === "warn"
-                    ? "bg-amber-600 text-white hover:bg-amber-700"
-                    : "bg-zinc-900 text-white hover:bg-zinc-800"
+                    ? "bg-amber-600 text-white shadow-sm hover:bg-amber-700"
+                    : "bg-zinc-900 text-white shadow-sm hover:bg-zinc-800"
               }`}
               title="Günlük hesaplama sonuçlarını ve anomalileri incele"
             >
@@ -270,14 +388,14 @@ export default async function DashboardPage() {
             </a>
             <a
               href="/events"
-              className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs hover:bg-zinc-50"
+              className="rounded-xl border border-zinc-300/70 bg-white/90 px-3 py-2 text-xs shadow-sm hover:bg-zinc-50"
               title="Ham IN/OUT kayıtlarını incele"
             >
               Ham Kayıtlar
             </a>
             <a
               href="/org"
-              className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs hover:bg-zinc-50"
+              className="rounded-xl border border-zinc-300/70 bg-white/90 px-3 py-2 text-xs shadow-sm hover:bg-zinc-50"
               title="Şube/kapı/cihaz yapılandırması"
             >
               Organizasyon Yapısı
@@ -296,7 +414,7 @@ export default async function DashboardPage() {
           title="Aktif Personel"
           icon={<KpiIcon kind="people" />}
           value={data.kpi.employeeCount}
-          accent="indigo"
+          accent="emerald"
           subline={
             Number(data.kpi.employeeCount ?? 0) === 0
               ? "Henüz personel yok (demo/kurulum aşaması olabilir)"
@@ -324,7 +442,7 @@ export default async function DashboardPage() {
           title="Son Olay Zamanı"
           icon={<KpiIcon kind="clock" />}
           value={fmt(data.kpi.lastEventAt, data.tz)}
-          accent="zinc"
+          accent="amber"
           valueClassName="mt-2 text-lg font-semibold"
           subline={sinceLastEvent != null ? `Son olaydan bu yana: ${sinceLastEvent}dk` : "—"}
         />
@@ -352,12 +470,22 @@ export default async function DashboardPage() {
       {/* MAIN GRID */}
       <section className="mt-6 grid gap-4 lg:grid-cols-3">
         {/* Action Needed */}
-        <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm lg:col-span-1">
+        <div
+          className={[
+            "relative overflow-hidden",
+            sectionCardCls("p-4 lg:col-span-1"),
+            "border-indigo-200/70",
+            "bg-[radial-gradient(circle_at_top_left,rgba(99,102,241,0.10),transparent_30%),linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(244,247,255,0.97)_100%)]",
+            "shadow-[0_14px_34px_rgba(79,70,229,0.08)]",
+          ].join(" ")}
+        >
+          <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-indigo-200/20 blur-3xl" />
+          <div className="pointer-events-none absolute bottom-0 left-0 h-24 w-40 rounded-full bg-sky-200/10 blur-3xl" />
           {/* Header */}
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <div className="text-sm font-semibold">Aksiyon Bekleyenler</div>
-              <div className="mt-2 text-xs text-zinc-500">Bugün için tespit edilen uyarılar ve yapılacaklar</div>
+              <div className="text-lg font-semibold tracking-tight text-zinc-900">Aksiyon Bekleyenler</div>
+              <div className="mt-2 text-[13px] leading-5 text-zinc-500">Bugün için tespit edilen uyarılar ve yapılacaklar</div>
               {(sev.high ?? 0) + (sev.medium ?? 0) + (sev.low ?? 0) > 0 ? (
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   {(sev.high ?? 0) > 0 ? (
@@ -380,19 +508,19 @@ export default async function DashboardPage() {
             </div>
             <a
               href="/reports/daily"
-              className="shrink-0 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs hover:bg-zinc-50"
+              className="shrink-0 rounded-xl border border-zinc-300/70 bg-white px-3 py-2 text-xs shadow-sm hover:bg-zinc-50"
               title="Tüm günlük sonuçları ve anomalileri incele"
             >
               Günlük Rapor
             </a>
           </div>
 
-          <div className="mt-1 text-xs text-zinc-500">Not: Bu liste gün sonu (Daily) hesaplamasına dayanır.</div>
+          <div className="mt-2 text-[12px] leading-5 text-zinc-500">Not: Bu liste gün sonu (Daily) hesaplamasına dayanır.</div>
 
           {needsRecompute ? (
-              <div className="mt-3 rounded-xl border border-amber-200 bg-gradient-to-r from-amber-50/80 to-white p-3 text-sm">
+              <div className="mt-3 rounded-2xl border border-amber-300/65 bg-[linear-gradient(135deg,rgba(255,251,235,0.98)_0%,rgba(254,243,199,0.90)_100%)] p-3 text-sm shadow-[0_8px_18px_rgba(245,158,11,0.08)] ring-1 ring-white/60">
                 <div className="font-medium">Günlük hesaplama eksik</div>
-                <div className="mt-1 text-xs text-zinc-600">
+                <div className="mt-1 text-[12px] leading-5 text-zinc-600">
                   Hesaplanan: {daily.computedRows}/{daily.expectedEmployees}. Daily sayfasından{" "}
                   <span className="font-medium">Recompute</span> çalıştırmanız gerekebilir.
                 </div>
@@ -405,14 +533,17 @@ export default async function DashboardPage() {
           {/* List (fixed height + hidden scrollbar) */}
           <div className="mt-4">
             <div className="max-h-[260px] overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              <div className="grid gap-2">
+              <div className="grid gap-2.5">
                 {data.actions.items.length === 0 ? (
-                  <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
-                    <div className="text-sm font-medium">Aksiyon yok</div>
-                    <div className="mt-1 text-xs text-zinc-600">
+                  <div className="rounded-2xl border border-indigo-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(238,242,255,0.88)_100%)] p-4 shadow-[0_10px_22px_rgba(79,70,229,0.06)] ring-1 ring-white/70">
+                    <div className="text-lg font-semibold tracking-tight text-zinc-900">Aksiyon yok</div>
+                    <div className="mt-1 text-[13px] leading-6 text-zinc-600">
                       Bugün için operasyonel aksiyon gerektiren bir anomali görünmüyor.
                     </div>
-                    <a className="mt-2 inline-block text-xs underline" href="/reports/daily">
+                    <a
+                      className="mt-3 inline-flex items-center justify-center rounded-xl border border-indigo-200/80 bg-white/85 px-3 py-2 text-xs font-semibold text-indigo-900 shadow-sm transition-colors hover:bg-indigo-50/80"
+                      href="/reports/daily"
+                    >
                       Daily rapora göz at →
                     </a>
                   </div>
@@ -420,20 +551,23 @@ export default async function DashboardPage() {
                   data.actions.items.slice(0, 8).map((it: any, idx: number) => (
               <div
                 key={`${String(it.id ?? "action")}-${idx}`}
-                className="rounded-xl border border-zinc-200 bg-white p-3"
+                className="rounded-2xl border border-indigo-200/55 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(245,247,255,0.92)_100%)] p-3 shadow-[0_8px_18px_rgba(79,70,229,0.05)] ring-1 ring-white/70"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-sm font-medium">{it.title}</div>
+                    <div className="text-[15px] font-semibold tracking-tight text-zinc-900">{it.title}</div>
                     {it.detail ? (
-                      <div className="text-xs text-zinc-500">{it.detail}</div>
+                      <div className="mt-1 text-[12px] leading-5 text-zinc-500">{it.detail}</div>
                     ) : null}
                   </div>
                   <div className="flex flex-col items-end gap-2">
                     <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs font-semibold">
                       {it.count}
                     </span>
-                    <a className="text-xs underline text-zinc-700" href={it.href}>
+                    <a
+                      className="inline-flex items-center justify-center rounded-lg border border-indigo-200/70 bg-white/90 px-2.5 py-1.5 text-[11px] font-semibold text-indigo-900 shadow-sm transition-colors hover:bg-indigo-50/80"
+                      href={it.href}
+                    >
                       Aç
                     </a>
                   </div>
@@ -445,11 +579,14 @@ export default async function DashboardPage() {
             </div>
 
             {/* Footer CTA */}
-            <div className="mt-3 flex items-center justify-between text-xs">
+            <div className="mt-4 flex items-center justify-between text-xs">
               <span className="text-zinc-500">
                 Gösterilen: {Math.min(8, data.actions.items.length)} / {data.actions.items.length}
               </span>
-              <a className="text-zinc-700 underline" href="/reports/daily">
+              <a
+                className="inline-flex items-center justify-center rounded-lg border border-zinc-300/70 bg-white/80 px-3 py-1.5 text-[11px] font-semibold text-zinc-800 shadow-sm transition-colors hover:bg-zinc-50"
+                href="/reports/daily"
+              >
                 Tüm aksiyonları gör →
               </a>
             </div>
@@ -457,32 +594,43 @@ export default async function DashboardPage() {
         </div>
 
         {/* Recent Activity */}
-        <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm lg:col-span-2">
+        <div
+          className={[
+            "relative overflow-hidden",
+            sectionCardCls("p-4 lg:col-span-2"),
+            "border-sky-200/70",
+            "bg-[radial-gradient(circle_at_top_right,rgba(56,189,248,0.10),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(243,248,255,0.97)_100%)]",
+            "shadow-[0_14px_34px_rgba(14,165,233,0.08)]",
+          ].join(" ")}
+        >
+          <div className="pointer-events-none absolute -right-8 top-0 h-32 w-40 rounded-full bg-sky-200/20 blur-3xl" />
+          <div className="pointer-events-none absolute left-0 top-0 h-24 w-32 rounded-full bg-indigo-200/10 blur-3xl" />
           <div className="flex items-end justify-between gap-3">
             <div>
-              <div className="text-sm font-semibold">Son Olaylar</div>
-              <div className="text-xs text-zinc-500">
+              <div className="text-lg font-semibold tracking-tight text-zinc-900">Son Olaylar</div>
+              <div className="text-[13px] leading-5 text-zinc-500">
                 En son gerçekleşen geçiş kayıtları (izleme amaçlı)
               </div>
             </div>
             <a
               href="/events"
-              className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm hover:bg-zinc-50"
+              className="rounded-xl border border-sky-200/80 bg-white/95 px-3 py-2 text-sm shadow-sm hover:bg-sky-50/60"
             >
               Tüm Kayıtlar
             </a>
           </div>
 
           {/* Table region (fixed height + hidden scrollbar) */}
-          <div className="mt-4 max-h-[320px] overflow-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="mt-5 rounded-2xl border border-sky-100/80 bg-white/55 px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
+            <div className="max-h-[320px] overflow-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <table className="w-full border-collapse text-sm">
               <thead>
-                <tr className="text-left text-xs text-zinc-500">
-                  <th className="border-b border-zinc-200 pb-2">Zaman</th>
-                  <th className="border-b border-zinc-200 pb-2">Personel</th>
-                  <th className="border-b border-zinc-200 pb-2">Kapı/Cihaz</th>
-                  <th className="border-b border-zinc-200 pb-2">Yön</th>
-                  <th className="border-b border-zinc-200 pb-2">Kaynak</th>
+                <tr className="text-left text-xs font-semibold uppercase tracking-[0.06em] text-zinc-500">
+                  <th className="border-b border-zinc-300/70 pb-3">Zaman</th>
+                  <th className="border-b border-zinc-300/70 pb-3">Personel</th>
+                  <th className="border-b border-zinc-300/70 pb-3">Kapı/Cihaz</th>
+                  <th className="border-b border-zinc-300/70 pb-3">Yön</th>
+                  <th className="border-b border-zinc-300/70 pb-3">Kaynak</th>
                 </tr>
               </thead>
               <tbody>
@@ -494,26 +642,26 @@ export default async function DashboardPage() {
                   </tr>
                 ) : (
                   data.recentEvents.map((ev) => (
-                    <tr key={ev.id} className="border-b border-zinc-100">
-                      <td className="py-3">
+                    <tr key={ev.id} className="border-b border-sky-100/80 transition-colors hover:bg-sky-50/50">
+                      <td className="py-3.5">
                         {DateTime.fromJSDate(ev.occurredAt).setZone(data.tz).toFormat("dd LLL HH:mm")}
                       </td>
-                      <td className="py-3">
+                      <td className="py-3.5">
                         <span className="font-medium">{ev.employee.employeeCode}</span>{" "}
                         <span className="text-zinc-600">
                           {ev.employee.firstName} {ev.employee.lastName}
                         </span>
                       </td>
-                      <td className="py-3">
+                      <td className="py-3.5">
                         {ev.door ? `${ev.door.code} • ${ev.door.name}` : "—"}
                         {ev.device?.name ? (
                           <div className="text-xs text-zinc-500">{ev.device.name}</div>
                         ) : null}
                       </td>
-                      <td className="py-3">
+                      <td className="py-3.5">
                       <Pill tone={ev.direction === "IN" ? "good" : "warn"}>{ev.direction}</Pill>
                     </td>
-                    <td className="py-3">
+                    <td className="py-3.5">
                       <Pill tone={ev.source === "DEVICE" ? "info" : "neutral"}>{ev.source}</Pill>
                     </td>
                     </tr>
@@ -521,33 +669,34 @@ export default async function DashboardPage() {
                 )}
               </tbody>
             </table>
+            </div>
           </div>
 
           {/* Quick Actions */}
-          <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-5 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
             <a
-              className="w-full rounded-xl bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800"
+              className="flex w-full items-center justify-center rounded-xl border border-emerald-300/70 bg-[linear-gradient(180deg,rgba(16,185,129,0.96)_0%,rgba(5,150,105,0.96)_100%)] px-3 py-2.5 text-center text-sm font-semibold text-white shadow-[0_10px_20px_rgba(16,185,129,0.18)] transition-colors hover:bg-[linear-gradient(180deg,rgba(5,150,105,0.98)_0%,rgba(4,120,87,0.98)_100%)]"
               href="/events"
               title="Hızlı manuel IN/OUT ekle (demo/operasyon)"
             >
               Manuel Olay Ekle
             </a>
             <a
-              className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-medium hover:bg-zinc-50"
+              className="flex w-full items-center justify-center rounded-xl border border-indigo-200/80 bg-[linear-gradient(180deg,rgba(238,242,255,0.98)_0%,rgba(224,231,255,0.96)_100%)] px-3 py-2.5 text-center text-sm font-semibold text-indigo-900 shadow-[0_8px_18px_rgba(79,70,229,0.08)] transition-colors hover:bg-[linear-gradient(180deg,rgba(224,231,255,1)_0%,rgba(199,210,254,0.96)_100%)]"
               href="/employees"
               title="Personel listesi ve 360 görünüm"
             >
               Personel Yönet
             </a>
             <a
-              className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-medium hover:bg-zinc-50"
+              className="flex w-full items-center justify-center rounded-xl border border-amber-200/80 bg-[linear-gradient(180deg,rgba(255,251,235,0.98)_0%,rgba(254,243,199,0.96)_100%)] px-3 py-2.5 text-center text-sm font-semibold text-amber-900 shadow-[0_8px_18px_rgba(245,158,11,0.08)] transition-colors hover:bg-[linear-gradient(180deg,rgba(254,243,199,1)_0%,rgba(253,230,138,0.96)_100%)]"
               href="/admin/company"
               title="Policy / timezone / kural setleri"
             >
               Şirket & Politika
             </a>
             <a
-              className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-medium hover:bg-zinc-50"
+              className="flex w-full items-center justify-center rounded-xl border border-sky-200/80 bg-[linear-gradient(180deg,rgba(240,249,255,0.98)_0%,rgba(224,242,254,0.96)_100%)] px-3 py-2.5 text-center text-sm font-semibold text-sky-900 shadow-[0_8px_18px_rgba(14,165,233,0.08)] transition-colors hover:bg-[linear-gradient(180deg,rgba(224,242,254,1)_0%,rgba(186,230,253,0.96)_100%)]"
               href="/reports/daily"
               title="Günlük sonuçlar ve recompute"
             >
@@ -558,14 +707,14 @@ export default async function DashboardPage() {
       </section>
 
       {/* System Health */}
-      <section className="mt-4 rounded-2xl border border-zinc-200 bg-white p-4">
+      <section className={`mt-4 ${sectionCardCls("p-4")}`}>
         <div className="flex items-center gap-2">
-          <div className="text-sm font-semibold">Cihaz & Senkron</div>
+          <div className="text-lg font-semibold tracking-tight text-zinc-900">Cihaz & Senkron</div>
           <span className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
             IT
           </span>
         </div>
-        <div className="mt-1 text-xs text-zinc-500">
+        <div className="mt-1 text-[13px] leading-5 text-zinc-500">
           Cihaz bağlantı durumu ve veri senkronizasyon özeti.
         </div>
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-zinc-600">
@@ -578,17 +727,17 @@ export default async function DashboardPage() {
           1 col -> 2 cols -> 4 cols only on very wide screens.
         */}
         <div className="mt-4 grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+          <div className="rounded-2xl border border-zinc-300/65 bg-[linear-gradient(180deg,rgba(250,250,250,1)_0%,rgba(244,244,245,0.82)_100%)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
             <div className="text-xs text-zinc-500">Toplam Cihaz</div>
             <div className="mt-1 text-lg font-semibold">{data.health.deviceTotal}</div>
           </div>
 
-          <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+          <div className="rounded-2xl border border-emerald-300/60 bg-[linear-gradient(180deg,rgba(236,253,245,0.95)_0%,rgba(255,255,255,0.98)_100%)] p-3 shadow-[0_8px_16px_rgba(16,185,129,0.055)] ring-1 ring-white/60">
             <div className="text-xs text-zinc-500">Online</div>
             <div className="mt-1 text-lg font-semibold">{data.health.deviceOnline}</div>
           </div>
 
-          <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+          <div className="rounded-2xl border border-amber-300/60 bg-[linear-gradient(180deg,rgba(255,251,235,0.95)_0%,rgba(255,255,255,0.98)_100%)] p-3 shadow-[0_8px_16px_rgba(245,158,11,0.055)] ring-1 ring-white/60">
             <div className="text-xs text-zinc-500">Offline</div>
             <div className="mt-1 text-lg font-semibold">{data.health.deviceOffline}</div>
             <div className="mt-1 text-[11px] text-zinc-500">
@@ -596,7 +745,7 @@ export default async function DashboardPage() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+          <div className="rounded-2xl border border-indigo-300/55 bg-[linear-gradient(180deg,rgba(238,242,255,0.95)_0%,rgba(255,255,255,0.98)_100%)] p-3 shadow-[0_8px_16px_rgba(79,70,229,0.055)] ring-1 ring-white/60">
             <div className="text-xs text-zinc-500">Son Sync</div>
             <div className="mt-1 text-sm font-semibold">{fmt(data.health.lastSyncAt ?? null, data.tz)}</div>
           </div>
@@ -606,35 +755,35 @@ export default async function DashboardPage() {
       {/* Live Feed & Summary */}
       <section className="mt-4 grid gap-4 md:grid-cols-2">
         {/* Live Feed */}
-        <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm flex flex-col md:h-[560px]">
+        <div className={`${sectionCardCls("p-4")} flex flex-col md:h-[560px]`}>
           <LiveFeedClient tz={data.tz} />
         </div>
         {/* Daily Summary + Branch Summary */}
-        <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm flex flex-col md:h-[560px]">
+        <div className={`${sectionCardCls("p-4")} flex flex-col md:h-[560px]`}>
           {/* Daily Summary */}
-          <div className="text-sm font-semibold">Günlük Durum Özeti</div>
-          <div className="mt-1 text-xs text-zinc-500">
+          <div className="text-lg font-semibold tracking-tight text-zinc-900">Günlük Durum Özeti</div>
+          <div className="mt-1 text-[13px] leading-5 text-zinc-500">
             Bugünün günlük raporundan hızlı özet (kayıt sayısı)
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3 text-center text-sm">
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+            <div className="rounded-2xl border border-emerald-300/60 bg-[linear-gradient(180deg,rgba(236,253,245,0.95)_0%,rgba(255,255,255,0.98)_100%)] p-3 shadow-[0_8px_16px_rgba(16,185,129,0.055)] ring-1 ring-white/60">
               <div className="text-xs text-emerald-700">Çalıştı</div>
               <div className="mt-1 text-xl font-semibold text-emerald-800">{data.kpi.dailySummary.present}</div>
             </div>
-            <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+            <div className="rounded-2xl border border-zinc-300/65 bg-[linear-gradient(180deg,rgba(250,250,250,1)_0%,rgba(244,244,245,0.82)_100%)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
               <div className="text-xs text-zinc-600">Gelmedi</div>
               <div className="mt-1 text-xl font-semibold">{data.kpi.dailySummary.absent}</div>
             </div>
-            <div className="rounded-xl border border-indigo-200 bg-indigo-50/60 p-3">
+            <div className="rounded-2xl border border-indigo-300/55 bg-[linear-gradient(180deg,rgba(238,242,255,0.95)_0%,rgba(255,255,255,0.98)_100%)] p-3 shadow-[0_8px_16px_rgba(79,70,229,0.055)] ring-1 ring-white/60">
               <div className="text-xs text-indigo-700">OFF</div>
               <div className="mt-1 text-xl font-semibold text-indigo-800">{data.kpi.dailySummary.off}</div>
             </div>
-            <div className="rounded-xl border border-red-200 bg-red-50/60 p-3">
+            <div className="rounded-2xl border border-red-300/60 bg-[linear-gradient(180deg,rgba(254,242,242,0.95)_0%,rgba(255,255,255,0.98)_100%)] p-3 shadow-[0_8px_16px_rgba(239,68,68,0.055)] ring-1 ring-white/60">
               <div className="text-xs text-red-700">Eksik Punch</div>
               <div className="mt-1 text-xl font-semibold text-red-800">{data.kpi.dailySummary.missingPunch}</div>
             </div>
           </div>
-          <div className="mt-4 text-xs text-zinc-500">
+         <div className="mt-4 text-[12px] leading-5 text-zinc-500">
             Bu bilgiler günlük rapordaki kayıt sayısından hesaplanır.
             <a className="ml-1 underline" href="/reports/daily">
               Detaylar
@@ -642,8 +791,8 @@ export default async function DashboardPage() {
           </div>
           {/* Branch Summary (scroll area) */}
           <div className="mt-6 flex-1 overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <div className="text-sm font-semibold">Şubeler & Kapılar</div>
-            <div className="mt-1 text-xs text-zinc-500">
+            <div className="text-lg font-semibold tracking-tight text-zinc-900">Şubeler & Kapılar</div>
+            <div className="mt-1 text-[13px] leading-5 text-zinc-500">
               Bugün için şube/kapı/cihaz özetleri. Detay için organizasyon sayfasına gidin.
             </div>
             <div className="mt-3 space-y-2">
@@ -653,7 +802,7 @@ export default async function DashboardPage() {
                 data.branchSummary.map((b: any) => (
                   <div
                     key={b.id}
-                    className="flex items-center justify-between rounded-xl border border-zinc-200 bg-zinc-50 p-3"
+                    className="flex items-center justify-between rounded-2xl border border-zinc-300/65 bg-[linear-gradient(180deg,rgba(250,250,250,1)_0%,rgba(244,244,245,0.82)_100%)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]"
                   >
                     <div>
                       <div className="text-sm font-medium">{b.name}</div>

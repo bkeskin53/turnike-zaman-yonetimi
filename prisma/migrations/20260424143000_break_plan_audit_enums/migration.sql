@@ -1,0 +1,5 @@
+-- BRK-1.1 — Break Plan Service/API audit enum values
+
+ALTER TYPE "AuditAction" ADD VALUE IF NOT EXISTS 'BREAK_PLAN_UPDATED';
+
+ALTER TYPE "AuditTargetType" ADD VALUE IF NOT EXISTS 'BREAK_PLAN';

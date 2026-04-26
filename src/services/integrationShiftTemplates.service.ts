@@ -1,9 +1,14 @@
 import crypto from "crypto";
-import { Prisma, IntegrationLogStatus } from "@prisma/client";
+import { Prisma, IntegrationLogStatus, RecomputeReason } from "@prisma/client";
 import { prisma } from "@/src/repositories/prisma";
 import { getActiveCompanyId } from "@/src/services/company.service";
 import { createIntegrationLogRepo, finalizeIntegrationLogRepo } from "@/src/repositories/integration.repo";
 import { buildShiftSignature } from "@/src/services/shiftPlan.service";
+import {
+  derivePlannedWorkMinutesFromShiftTimes,
+  deriveShiftTemplateClock,
+} from "@/src/domain/shiftTemplates/shiftTemplateClock";
+import { markRecomputeRequired } from "@/src/services/recomputeRequired.service";
 import {
   sendIntegrationCallback,
   summarizeCallbackForMeta,
@@ -11,10 +16,21 @@ import {
 } from "@/src/services/integrationWebhook.service";
 
 type UpsertShiftTemplateInput = {
+  // New canonical contract:
+  //   shiftCode + plannedWorkHours + startTime
+  //
+  // Legacy contract is still supported:
+  //   signature? + startTime + endTime
+  //
   // signature opsiyonel: gönderilirse derived signature ile uyumlu olmalı (guard).
+  shiftCode?: string | null;
   signature?: string | null;
-  startTime: string;
-  endTime: string;
+  plannedWorkHours?: string | number | null;
+  plannedWorkHoursText?: string | number | null;
+  plannedWorkDecimalHours?: string | number | null;
+  plannedWorkMinutes?: number | null;
+  startTime?: string | null;
+  endTime?: string | null;
 };
 
 type BatchInput = {
@@ -36,6 +52,118 @@ function stableHash(obj: any) {
 function normStr(v: any) {
   const s = String(v ?? "").trim();
   return s || "";
+}
+
+function firstNonBlank(...values: any[]) {
+  for (const value of values) {
+    if (value == null) continue;
+    if (String(value).trim() === "") continue;
+    return value;
+  }
+  return undefined;
+}
+
+function integrationItemError(code: string, message: string, details?: any) {
+  const err = new Error(message) as Error & { code: string; details?: any };
+  err.code = code;
+  err.details = details;
+  return err;
+}
+
+function normalizeIntegrationShiftTemplate(raw: any) {
+  const providedShiftCode = normStr(raw?.shiftCode);
+  const providedSignature = normStr(raw?.signature);
+  const startTimeRaw = normStr(raw?.startTime);
+  const endTimeRaw = normStr(raw?.endTime);
+  const plannedWorkHours = firstNonBlank(
+    raw?.plannedWorkHours,
+    raw?.plannedWorkHoursText,
+    raw?.plannedWorkDecimalHours
+  );
+  const plannedWorkMinutesRaw = firstNonBlank(raw?.plannedWorkMinutes);
+  const identityCode = providedShiftCode || providedSignature || undefined;
+
+  if (plannedWorkHours !== undefined || plannedWorkMinutesRaw !== undefined) {
+    const plannedWorkMinutes =
+      plannedWorkMinutesRaw !== undefined ? Number(plannedWorkMinutesRaw) : undefined;
+
+    const clock = deriveShiftTemplateClock({
+      shiftCode: identityCode,
+      plannedWorkHours,
+      plannedWorkMinutes,
+      startTime: startTimeRaw || null,
+    });
+
+    if (providedSignature && providedSignature !== clock.signature) {
+      throw integrationItemError(
+        "SIGNATURE_MISMATCH",
+        "provided signature does not match derived signature from plannedWorkHours/startTime",
+        {
+          provided: providedSignature,
+          derived: clock.signature,
+          startTime: clock.startTime,
+          endTime: clock.endTime,
+          plannedWorkMinutes: clock.plannedWorkMinutes,
+          plannedWorkHoursText: clock.plannedWorkHoursText,
+        }
+      );
+    }
+
+    return {
+      shiftCode: providedShiftCode || providedSignature || clock.signature,
+      signature: clock.signature,
+      startTime: clock.startTime,
+      endTime: clock.endTime,
+      spansMidnight: clock.spansMidnight,
+      plannedWorkMinutes: clock.plannedWorkMinutes,
+      plannedWorkHoursText: clock.plannedWorkHoursText,
+    };
+  }
+
+  if (!startTimeRaw || !endTimeRaw) {
+    throw integrationItemError(
+      "INVALID_TEMPLATE",
+      "plannedWorkHours + startTime or legacy startTime + endTime is required",
+      {
+        shiftCode: providedShiftCode || null,
+        signature: providedSignature || null,
+        plannedWorkHours: plannedWorkHours ?? null,
+        startTime: startTimeRaw,
+        endTime: endTimeRaw,
+      }
+    );
+  }
+
+  const derived = buildShiftSignature(startTimeRaw, endTimeRaw);
+  const plannedWorkMinutes = derivePlannedWorkMinutesFromShiftTimes(derived.startTime, derived.endTime);
+  const clock = deriveShiftTemplateClock({
+    shiftCode: identityCode,
+    plannedWorkMinutes,
+    startTime: derived.startTime,
+  });
+
+  if (providedSignature && providedSignature !== clock.signature) {
+    throw integrationItemError(
+      "SIGNATURE_MISMATCH",
+      "provided signature does not match derived signature from startTime/endTime",
+      {
+        provided: providedSignature,
+        derived: clock.signature,
+        startTime: clock.startTime,
+        endTime: clock.endTime,
+      }
+    );
+  }
+
+  return {
+    shiftCode: providedShiftCode || providedSignature || clock.signature,
+    signature: clock.signature,
+    startTime: clock.startTime,
+    endTime: clock.endTime,
+    spansMidnight: clock.spansMidnight,
+    plannedWorkMinutes: clock.plannedWorkMinutes,
+    plannedWorkHoursText: clock.plannedWorkHoursText,
+  };
 }
 
 export async function integrationUpsertShiftTemplates(
@@ -116,40 +244,71 @@ export async function integrationUpsertShiftTemplates(
   const errors: any[] = [];
 
   for (const raw of templates) {
-    const startTimeRaw = normStr((raw as any)?.startTime);
-    const endTimeRaw = normStr((raw as any)?.endTime);
-
-    if (!startTimeRaw || !endTimeRaw) {
+    let normalized: ReturnType<typeof normalizeIntegrationShiftTemplate>;
+    try {
+      normalized = normalizeIntegrationShiftTemplate(raw as any);
+    } catch (e: any) {
       failed += 1;
       willUnchanged += 1; // dryRun summary not critical here; keep counts stable-ish
-      const signature = normStr((raw as any)?.signature) || "—";
-      const err = { code: "INVALID_TEMPLATE", message: "startTime and endTime are required", details: { startTime: startTimeRaw, endTime: endTimeRaw } };
-      results.push({ signature, status: "FAILED", error: err });
-      errors.push({ signature, ...err });
-      continue;
-    }
-
-    const derived = buildShiftSignature(startTimeRaw, endTimeRaw);
-    const signature = derived.signature;
-
-    const providedSig = normStr((raw as any)?.signature);
-    if (providedSig && providedSig !== signature) {
-      failed += 1;
+      const signature = normStr((raw as any)?.signature) || normStr((raw as any)?.shiftCode) || "—";
+      const code =
+        typeof e?.code === "string"
+          ? e.code
+          : typeof e?.message === "string" && e.message.startsWith("PLANNED_WORK_")
+            ? "PLANNED_WORK_INVALID"
+            : "INVALID_TEMPLATE";
       const err = {
-        code: "SIGNATURE_MISMATCH",
-        message: "provided signature does not match derived signature from startTime/endTime",
-        details: { provided: providedSig, derived: signature, startTime: derived.startTime, endTime: derived.endTime },
+        code,
+        message: String(e?.message ?? "invalid shift template"),
+        details: e?.details ?? {
+          shiftCode: normStr((raw as any)?.shiftCode) || null,
+          signature: normStr((raw as any)?.signature) || null,
+        },
       };
       results.push({ signature, status: "FAILED", error: err });
       errors.push({ signature, ...err });
       continue;
     }
 
-    // Find existing by unique key (companyId+signature), regardless of isActive.
-    const existing = await prisma.shiftTemplate.findFirst({
-      where: { companyId, signature },
-      select: { id: true, startTime: true, endTime: true, spansMidnight: true, isActive: true },
+    const { shiftCode, signature, startTime, endTime, spansMidnight, plannedWorkMinutes } = normalized;
+
+    // Find existing by stable identity and derived signature. If both point to
+    // different records, the item is unsafe to apply.
+    const matches = await prisma.shiftTemplate.findMany({
+      where: {
+        companyId,
+        OR: [{ signature }, { shiftCode }],
+      },
+      select: {
+        id: true,
+        shiftCode: true,
+        signature: true,
+        startTime: true,
+        endTime: true,
+        spansMidnight: true,
+        plannedWorkMinutes: true,
+        isActive: true,
+      },
+      take: 2,
     });
+
+    const existing = matches[0] ?? null;
+
+    if (matches.length > 1 && matches.some((m) => m.id !== existing.id)) {
+      failed += 1;
+      const err = {
+        code: "SHIFT_TEMPLATE_IDENTITY_CONFLICT",
+        message: "shiftCode and signature match different shift templates",
+        details: {
+          shiftCode,
+          signature,
+          matchedIds: matches.map((m) => m.id),
+        },
+      };
+      results.push({ signature, status: "FAILED", error: err });
+      errors.push({ signature, ...err });
+      continue;
+    }
 
     if (!existing) {
       if (dryRun) {
@@ -161,10 +320,11 @@ export async function integrationUpsertShiftTemplates(
         data: {
           companyId,
           signature,
-          shiftCode: signature,
-          startTime: derived.startTime,
-          endTime: derived.endTime,
-          spansMidnight: derived.spansMidnight,
+          shiftCode,
+          startTime,
+          endTime,
+          spansMidnight,
+          plannedWorkMinutes,
           isActive: true,
         },
         select: { id: true, isActive: true },
@@ -176,9 +336,12 @@ export async function integrationUpsertShiftTemplates(
 
     // Exists: update if any changes or was inactive.
     const needsUpdate =
-      existing.startTime !== derived.startTime ||
-      existing.endTime !== derived.endTime ||
-      existing.spansMidnight !== derived.spansMidnight ||
+      existing.shiftCode !== shiftCode ||
+      existing.signature !== signature ||
+      existing.startTime !== startTime ||
+      existing.endTime !== endTime ||
+      existing.spansMidnight !== spansMidnight ||
+      existing.plannedWorkMinutes !== plannedWorkMinutes ||
       existing.isActive !== true;
 
     if (!needsUpdate) {
@@ -197,9 +360,12 @@ export async function integrationUpsertShiftTemplates(
     const updatedTpl = await prisma.shiftTemplate.update({
       where: { id: existing.id },
       data: {
-        startTime: derived.startTime,
-        endTime: derived.endTime,
-        spansMidnight: derived.spansMidnight,
+        shiftCode,
+        signature,
+        startTime,
+        endTime,
+        spansMidnight,
+        plannedWorkMinutes,
         isActive: true, // CRITICAL: if was passive, auto-activate on integration upsert.
       },
       select: { id: true, isActive: true },
@@ -214,6 +380,16 @@ export async function integrationUpsertShiftTemplates(
     failed === 0 ? IntegrationLogStatus.SUCCESS : failed === total ? IntegrationLogStatus.FAILED : IntegrationLogStatus.PARTIAL;
 
   const processedAt = new Date();
+
+  if (!dryRun && (created > 0 || updated > 0)) {
+    await markRecomputeRequired({
+      companyId,
+      reason: RecomputeReason.SHIFT_TEMPLATE_UPDATED,
+      createdByUserId: null,
+      rangeStartDayKey: null,
+      rangeEndDayKey: null,
+    });
+  }
 
   // S10 callback (never in dryRun)
   let callbackMeta: any = null;

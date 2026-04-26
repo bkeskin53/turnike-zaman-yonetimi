@@ -1,13 +1,17 @@
 import AppShell from "@/app/_components/AppShellNoSSR";
-import ShiftAssignmentsClient from "./ui";
+import ShiftImportClient from "./import-ui";
+import { getSessionOrNull } from "@/src/auth/guard";
+import { ROLE_SETS } from "@/src/auth/roleSets";
 
-export default function ShiftAssignmentsPage() {
+export default async function ShiftAssignmentsPage() {
+  const s = await getSessionOrNull();
+  const canWrite = Boolean(s && ROLE_SETS.OPS_WRITE.includes(s.role));
   return (
     <AppShell
-      title="Toplu Vardiya"
-      subtitle="Stage 4 — Weekly (WEEK_TEMPLATE) atama. Gün override / custom / manual etkilenmez."
+      title="Vardiya İçe Aktar"
+      subtitle="Excel / CSV planını içeri al, önce dry-run ile doğrula, sonra planner override olarak uygula."
     >
-      <ShiftAssignmentsClient />
+      <ShiftImportClient canWrite={canWrite} />
     </AppShell>
   );
 }

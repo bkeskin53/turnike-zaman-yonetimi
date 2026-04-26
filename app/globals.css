@@ -1,8 +1,80 @@
 @import "tailwindcss";
 
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes softPulse {
+  0%, 100% {
+    opacity: 0.72;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+html {
+  scrollbar-gutter: stable;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f4f7fb;
+  --foreground: #111827;
+
+  /* App foundation */
+  --app-bg: #f4f7fb;
+  --app-bg-elevated: #ffffff;
+  --app-surface: rgba(255, 255, 255, 0.82);
+  --app-surface-strong: rgba(255, 255, 255, 0.94);
+  --app-surface-soft: rgba(248, 250, 252, 0.92);
+  --app-border: rgba(148, 163, 184, 0.22);
+  --app-border-strong: rgba(99, 102, 241, 0.22);
+
+  /* Text */
+  --app-text: #0f172a;
+  --app-text-soft: #475569;
+  --app-text-faint: #64748b;
+  --app-text-on-dark: rgba(255, 255, 255, 0.96);
+  --app-text-on-dark-soft: rgba(226, 232, 240, 0.72);
+
+  /* Brand */
+  --brand-50: #eef2ff;
+  --brand-100: #e0e7ff;
+  --brand-200: #c7d2fe;
+  --brand-300: #a5b4fc;
+  --brand-400: #818cf8;
+  --brand-500: #6366f1;
+  --brand-600: #4f46e5;
+  --brand-700: #4338ca;
+  --brand-800: #3730a3;
+
+  /* Accent */
+  --accent-sky: #38bdf8;
+  --accent-cyan: #22d3ee;
+  --accent-violet: #8b5cf6;
+
+  /* Semantic */
+  --success-500: #10b981;
+  --warning-500: #f59e0b;
+  --danger-500: #ef4444;
+  --info-500: #0ea5e9;
+
+  /* Shell */
+  --shell-sidebar-from: #0f172a;
+  --shell-sidebar-via: #172554;
+  --shell-sidebar-to: #312e81;
+  --shell-header-from: rgba(15, 23, 42, 0.94);
+  --shell-header-via: rgba(23, 37, 84, 0.92);
+  --shell-header-to: rgba(49, 46, 129, 0.88);
+
+  /* Effects */
+  --shadow-brand: 0 20px 50px rgba(79, 70, 229, 0.18);
+  --ring-brand: 0 0 0 1px rgba(129, 140, 248, 0.22);
 
   /**
    * Global UI scale
@@ -11,23 +83,115 @@
    */
 }
 
+.skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.skeleton-shimmer::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  animation: shimmer 1.8s linear infinite;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.7), transparent);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-app-bg: var(--app-bg);
+  --color-app-bg-elevated: var(--app-bg-elevated);
+  --color-app-surface: var(--app-surface);
+  --color-app-surface-strong: var(--app-surface-strong);
+  --color-app-surface-soft: var(--app-surface-soft);
+  --color-app-border: var(--app-border);
+  --color-app-border-strong: var(--app-border-strong);
+  --color-app-text: var(--app-text);
+  --color-app-text-soft: var(--app-text-soft);
+  --color-app-text-faint: var(--app-text-faint);
+  --color-app-text-on-dark: var(--app-text-on-dark);
+  --color-app-text-on-dark-soft: var(--app-text-on-dark-soft);
+  --color-brand-50: var(--brand-50);
+  --color-brand-100: var(--brand-100);
+  --color-brand-200: var(--brand-200);
+  --color-brand-300: var(--brand-300);
+  --color-brand-400: var(--brand-400);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
+  --color-brand-700: var(--brand-700);
+  --color-brand-800: var(--brand-800);
+  --color-accent-sky: var(--accent-sky);
+  --color-accent-cyan: var(--accent-cyan);
+  --color-accent-violet: var(--accent-violet);
+  --color-success-500: var(--success-500);
+  --color-warning-500: var(--warning-500);
+  --color-danger-500: var(--danger-500);
+  --color-info-500: var(--info-500);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #08111f;
+    --foreground: #eef2ff;
+    --app-bg: #08111f;
+    --app-bg-elevated: #0f172a;
+    --app-surface: rgba(15, 23, 42, 0.82);
+    --app-surface-strong: rgba(15, 23, 42, 0.94);
+    --app-surface-soft: rgba(30, 41, 59, 0.9);
+    --app-border: rgba(148, 163, 184, 0.2);
+    --app-border-strong: rgba(129, 140, 248, 0.28);
+    --app-text: #e5e7eb;
+    --app-text-soft: #cbd5e1;
+    --app-text-faint: #94a3b8;
   }
 }
 
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background:
+    radial-gradient(1200px 700px at 8% -5%, rgba(56, 189, 248, 0.12), transparent 58%),
+    radial-gradient(1100px 680px at 100% 0%, rgba(99, 102, 241, 0.14), transparent 60%),
+    linear-gradient(180deg, #f8fbff 0%, #f4f7fb 45%, #eef3f9 100%);
+}
+
 body {
-  background: var(--background);
+  background: transparent;
   color: var(--foreground);
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
     Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  min-height: 100vh;
+}
+
+::selection {
+  background: rgba(99, 102, 241, 0.22);
+  color: #0f172a;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(148, 163, 184, 0.08);
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(99, 102, 241, 0.5), rgba(56, 189, 248, 0.42));
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(99, 102, 241, 0.7), rgba(56, 189, 248, 0.62));
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }

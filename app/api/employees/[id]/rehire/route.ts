@@ -1,8 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
+import { RecomputeReason } from "@prisma/client";
 import { requireRole } from "@/src/auth/guard";
 import { getActiveCompanyId, getCompanyBundle } from "@/src/services/company.service";
 import { prisma } from "@/src/repositories/prisma";
-import { dbDateFromDayKey, dayKeyToday, isISODate } from "@/src/utils/dayKey";
+import { markRecomputeRequired } from "@/src/services/recomputeRequired.service";
+import {
+  applyEmployeeEmploymentLifecycleMutation,
+  isEmployeeEmploymentLifecycleMutationError,
+} from "@/src/services/employees/employeeEmploymentLifecycleMutation.service";
+import { dayKeyToday, isISODate } from "@/src/utils/dayKey";
+
+function statusForLifecycleError(code: string) {
+  if (code === "EMPLOYEE_NOT_FOUND") return 404;
+  return 400;
+}
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
@@ -20,46 +31,56 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     const startKey = startKeyRaw || todayKey;
     const reason = body?.reason ? String(body.reason).trim() : null;
 
-    if (!isISODate(startKey)) return NextResponse.json({ error: "INVALID_START_DATE" }, { status: 400 });
+    if (!isISODate(startKey)) {
+      return NextResponse.json({ error: "INVALID_START_DATE" }, { status: 400 });
+    }
 
-    const startDb = dbDateFromDayKey(startKey);
-
-    const result = await prisma.$transaction(async (tx) => {
-      const overlap = await tx.employeeEmploymentPeriod.findFirst({
-        where: {
+    try {
+      const result = await prisma.$transaction((tx) =>
+        applyEmployeeEmploymentLifecycleMutation({
+          tx,
           companyId,
           employeeId: id,
-          startDate: { lte: startDb },
-          OR: [{ endDate: null }, { endDate: { gte: startDb } }],
-        },
-        select: { id: true },
-      });
-      if (overlap) return { ok: false as const, status: 400, body: { error: "EMPLOYMENT_OVERLAP" } };
-
-      const created = await tx.employeeEmploymentPeriod.create({
-        data: { companyId, employeeId: id, startDate: startDb, endDate: null, reason: reason || null },
-        select: { id: true },
-      });
-
-      await tx.employeeAction.create({
-        data: {
-          companyId,
-          employeeId: id,
-          type: "REHIRE",
-          effectiveDate: startDb,
-          note: reason || null,
+          todayKey,
           actorUserId: session.userId,
-          details: { periodId: created.id, startDate: startKey },
+          action: "REHIRE",
+          effectiveDayKey: startKey,
+          reason,
+          actionNote: reason,
+          actionDetails: {
+            source: "EMPLOYEE_REHIRE_ROUTE_PATCH_8_8",
+          },
+        }),
+      );
+
+      if (result.changed) {
+        await markRecomputeRequired({
+          companyId,
+          reason: RecomputeReason.WORKFORCE_UPDATED,
+          createdByUserId: session.userId,
+          rangeStartDayKey: startKey,
+          rangeEndDayKey: null,
+        });
+      }
+
+      return NextResponse.json(
+        {
+          ok: true,
+          startDate: startKey,
+          derivedIsActive: result.derivedIsActive,
         },
-      });
+        { status: 200 },
+      );
+    } catch (error) {
+      if (isEmployeeEmploymentLifecycleMutationError(error)) {
+        return NextResponse.json(
+          { error: error.code },
+          { status: statusForLifecycleError(error.code) },
+        );
+      }
 
-      const derivedIsActive = startKey <= todayKey;
-      await tx.employee.update({ where: { id, companyId }, data: { isActive: derivedIsActive } });
-
-      return { ok: true as const, status: 200, body: { ok: true, startDate: startKey, derivedIsActive } };
-    });
-
-    return NextResponse.json(result.body, { status: result.status });
+      throw error;
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg === "UNAUTHORIZED") return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });

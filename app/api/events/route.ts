@@ -2,10 +2,15 @@ import { NextResponse } from "next/server";
 import { requireRole } from "@/src/auth/guard";
 import { authErrorResponse } from "@/src/utils/api";
 import { addManualEvent, getEvents } from "@/src/services/rawEvent.service";
+import { getEmployeeScopeWhereForSession } from "@/src/auth/scope";
+import { writeAudit } from "@/src/audit/writeAudit";
+import { AuditAction, AuditTargetType, UserRole } from "@prisma/client";
 
 export async function GET(req: Request) {
   try {
-    await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR"]);
+    // Read-only events: Supervisor can view IN/OUT movements
+    const session = await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR", "SUPERVISOR"]);
+    const employeeWhere = await getEmployeeScopeWhereForSession(session);
 
     const url = new URL(req.url);
     const employeeId = url.searchParams.get("employeeId") ?? undefined;
@@ -14,7 +19,7 @@ export async function GET(req: Request) {
     const doorId = url.searchParams.get("doorId") ?? undefined;
     const deviceId = url.searchParams.get("deviceId") ?? undefined;
 
-    const data = await getEvents({ employeeId, date, doorId, deviceId });
+    const data = await getEvents({ employeeId, date, doorId, deviceId, employeeWhere });
     return NextResponse.json(data);
   } catch (err) {
     return authErrorResponse(err) ?? NextResponse.json({ error: "server_error" }, { status: 500 });
@@ -23,7 +28,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR"]);
+    const session = await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR"]);
     const body = await req.json().catch(() => null);
 
     const created = await addManualEvent({
@@ -32,6 +37,22 @@ export async function POST(req: Request) {
       direction: body?.direction,
       doorId: body?.doorId ?? null,
       deviceId: body?.deviceId ?? null,
+    });
+
+    await writeAudit({
+      req,
+      actorUserId: session.userId,
+      actorRole: session.role as unknown as UserRole,
+      action: AuditAction.MANUAL_EVENT,
+      targetType: AuditTargetType.EVENT,
+      targetId: created?.id ?? null,
+      details: {
+        employeeId: body?.employeeId ?? null,
+        occurredAt: body?.occurredAt ?? null,
+        direction: body?.direction ?? null,
+        doorId: body?.doorId ?? null,
+        deviceId: body?.deviceId ?? null,
+      },
     });
 
     return NextResponse.json({ item: created }, { status: 201 });

@@ -3,6 +3,94 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 
 type MonthlyItem = any;
+type MonthlyCoverage = {
+  expectedEmployeeCount: number;
+  daysInMonth: number;
+  expectedRows: number;
+  computedRows: number;
+  missingRows: number;
+  coveragePct: number;
+  isComplete: boolean;
+  missingDayKeys: string[];
+} | null;
+
+function cx(...xs: Array<string | false | null | undefined>) {
+  return xs.filter(Boolean).join(" ");
+}
+
+type Tone = "neutral" | "info" | "good" | "warn" | "violet" | "danger";
+function toneStyles(tone: Tone) {
+  switch (tone) {
+    case "info":
+      return { chip: "bg-[linear-gradient(135deg,rgba(14,165,233,0.16),rgba(56,189,248,0.10))] text-sky-800 ring-sky-300/45", soft: "border-sky-200/70 bg-gradient-to-br from-white via-sky-50/65 to-cyan-50/55" };
+    case "good":
+      return { chip: "bg-[linear-gradient(135deg,rgba(16,185,129,0.16),rgba(52,211,153,0.10))] text-emerald-800 ring-emerald-300/45", soft: "border-emerald-200/70 bg-gradient-to-br from-white via-emerald-50/65 to-teal-50/55" };
+    case "warn":
+      return { chip: "bg-[linear-gradient(135deg,rgba(245,158,11,0.18),rgba(251,191,36,0.10))] text-amber-900 ring-amber-300/45", soft: "border-amber-200/70 bg-gradient-to-br from-white via-amber-50/70 to-orange-50/55" };
+    case "violet":
+      return { chip: "bg-[linear-gradient(135deg,rgba(99,102,241,0.18),rgba(139,92,246,0.10))] text-indigo-900 ring-indigo-300/45", soft: "border-indigo-200/70 bg-gradient-to-br from-white via-indigo-50/70 to-violet-50/60" };
+    case "danger":
+      return { chip: "bg-[linear-gradient(135deg,rgba(244,63,94,0.16),rgba(251,113,133,0.10))] text-rose-800 ring-rose-300/45", soft: "border-rose-200/70 bg-gradient-to-br from-white via-rose-50/65 to-pink-50/55" };
+    default:
+      return { chip: "bg-slate-100/90 text-slate-700 ring-slate-300/55", soft: "border-slate-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.94))]" };
+  }
+}
+
+function PillBadge({ tone = "neutral", children }: { tone?: Tone; children: React.ReactNode }) {
+  const t = toneStyles(tone);
+  return (
+    <span className={cx("inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-tight ring-1 ring-inset shadow-sm", t.chip)}>
+      {children}
+    </span>
+  );
+}
+
+function SkeletonLine({
+  className,
+}: {
+  className?: string;
+}) {
+  return (
+    <div
+      className={cx(
+        "animate-pulse rounded-lg bg-[linear-gradient(90deg,rgba(226,232,240,0.9),rgba(241,245,249,1),rgba(226,232,240,0.9))]",
+        className
+      )}
+    />
+  );
+}
+
+function Button({
+  variant = "secondary",
+  disabled,
+  onClick,
+  children,
+  title,
+  type = "button",
+}: {
+  variant?: "primary" | "secondary" | "danger" | "ghost";
+  disabled?: boolean;
+  onClick?: () => void;
+  children: React.ReactNode;
+  title?: string;
+  type?: "button" | "submit";
+}) {
+  const base =
+    "inline-flex h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-60";
+  const styles =
+    variant === "primary"
+      ? "border border-indigo-400/30 bg-[linear-gradient(135deg,#4f46e5,#7c3aed)] text-white shadow-[0_14px_28px_rgba(79,70,229,0.22)] hover:brightness-105"
+      : variant === "danger"
+      ? "border border-rose-300/30 bg-[linear-gradient(135deg,#e11d48,#f43f5e)] text-white shadow-[0_14px_28px_rgba(225,29,72,0.16)] hover:brightness-105"
+      : variant === "ghost"
+      ? "bg-transparent text-slate-700 hover:bg-indigo-50/70 hover:text-indigo-700"
+      : "border border-slate-200/80 bg-white/88 text-slate-900 shadow-[0_10px_24px_rgba(15,23,42,0.05)] hover:border-indigo-200 hover:bg-indigo-50/50";
+  return (
+    <button className={cx(base, styles)} onClick={onClick} disabled={disabled} title={title} type={type}>
+      {children}
+    </button>
+  );
+}
 
 function getCode(item: MonthlyItem) {
   return item.employeeCode ?? item.employee?.employeeCode ?? "";
@@ -72,10 +160,10 @@ function shiftSummaryTitle(item: MonthlyItem) {
 }
 
 function badgeClass(kind: "ok" | "warn" | "bad" | "neutral") {
-  if (kind === "ok") return "bg-emerald-50 text-emerald-700";
-  if (kind === "warn") return "bg-amber-50 text-amber-800";
-  if (kind === "bad") return "bg-rose-50 text-rose-700";
-  return "bg-zinc-100 text-zinc-700";
+  if (kind === "ok") return "bg-emerald-50/90 text-emerald-800 ring-1 ring-emerald-200/70";
+  if (kind === "warn") return "bg-amber-50/90 text-amber-900 ring-1 ring-amber-200/70";
+  if (kind === "bad") return "bg-rose-50/90 text-rose-800 ring-1 ring-rose-200/70";
+  return "bg-slate-100/90 text-slate-700 ring-1 ring-slate-200/70";
 }
 
 function anomalyLabel(code: string): string {
@@ -105,7 +193,7 @@ type MonthlyFilter =
   | "MANUAL"
   | "HAS_ANY_ANOMALY";
 
-export default function MonthlyReportClient() {
+export default function MonthlyReportClient(props: { canRecompute: boolean; role: string }) {
   const [month, setMonth] = useState(() => {
     // Local ay (UTC değil): ay başında/sonunda "bir önceki ay"a düşme bug'ını engeller
     const d = new Date();
@@ -114,9 +202,12 @@ export default function MonthlyReportClient() {
     return `${yyyy}-${mm}`;
   }); // YYYY-MM
   const [items, setItems] = useState<MonthlyItem[]>([]);
+  const [coverage, setCoverage] = useState<MonthlyCoverage>(null);
   const [loading, setLoading] = useState(false);
   const [loadingRecompute, setLoadingRecompute] = useState(false);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [openRows, setOpenRows] = useState<Record<string, boolean>>({});
   const [filter, setFilter] = useState<MonthlyFilter>("ALL");
 
@@ -172,7 +263,14 @@ export default function MonthlyReportClient() {
         credentials: "include",
         cache: "no-store",
       });
-      if (!res.ok) throw new Error("anomaly load failed");
+      if (!res.ok) {
+        if (res.status === 403) {
+          // Scope dışı: supervisor bu personelin anomalilerini göremez.
+          setAnomalyMap((p) => ({ ...p, [employeeId]: [] }));
+          return;
+        }
+        throw new Error("anomaly load failed");
+      }
       const json = await res.json();
       setAnomalyMap((p) => ({ ...p, [employeeId]: json.items ?? [] }));
     } finally {
@@ -193,31 +291,83 @@ export default function MonthlyReportClient() {
     });
   }
 
-  async function load(sync?: boolean) {
+  async function load() {
     setLoading(true);
     setError(null);
+    setNotice(null);
+
     try {
       const qs = new URLSearchParams({ month });
-      if (sync) qs.set("sync", "1");
+
       const res = await fetch(`/api/reports/monthly?${qs.toString()}`, {
         cache: "no-store",
         credentials: "include",
       });
-      if (!res.ok) throw new Error(`GET monthly failed: ${res.status}`);
+
+      if (!res.ok) {
+        if (res.status === 403) {
+          throw new Error("Bu raporu görüntülemek için yetkiniz yok.");
+        }
+
+        throw new Error(`GET monthly failed: ${res.status}`);
+      }
+
       const json = await res.json();
       setItems(json.items ?? []);
+      setCoverage(json.coverage ?? null);
     } catch (e: any) {
       setError(e?.message ?? "Load failed");
     } finally {
       setLoading(false);
+      setHasLoadedOnce(true);
     }
   }
 
   async function recomputeMonth() {
+    if (!props.canRecompute) {
+      setError(null);
+      setNotice("Bu rolde Recompute yetkiniz yok. Raporu görüntüleyebilirsiniz (read-only).");
+     return;
+    }
     setLoadingRecompute(true);
     setError(null);
+    setNotice(null);
     try {
-      await load(true);
+      const [y, m] = month.split("-");
+      if (!y || !m) throw new Error("Invalid month format");
+
+      const year = Number(y);
+      const monthIndex = Number(m) - 1;
+
+      const startDayKey = `${y}-${m}-01`;
+
+      const endDay = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+      const endDayKey = `${y}-${m}-${String(endDay).padStart(2, "0")}`;
+
+      const res = await fetch(`/api/admin/recompute-required`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          rangeStartDayKey: startDayKey,
+          rangeEndDayKey: endDayKey,
+        }),
+      });
+
+      if (!res.ok) {
+        if (res.status === 403) {
+          setNotice("Recompute işlemi için yetkiniz yok (403).");
+          return;
+        }
+
+        throw new Error(`Recompute job creation failed: ${res.status}`);
+      }
+
+      setNotice("Recompute job queued");
+      await load();
+
     } catch (e: any) {
       setError(e?.message ?? "Recompute failed");
     } finally {
@@ -255,6 +405,16 @@ export default function MonthlyReportClient() {
     return items;
   }, [items, filter, anomalyMap]);
 
+  const coverageTone: Tone = useMemo(() => {
+    if (!coverage) return "neutral";
+    if (coverage.isComplete) return "good";
+    if ((coverage.coveragePct ?? 0) >= 80) return "warn";
+    return "danger";
+  }, [coverage]);
+
+  const initialLoading = loading && !hasLoadedOnce;
+  const refreshing = loading && hasLoadedOnce;
+
   return (
     <div className="grid max-w-full gap-4 overflow-x-hidden">
       {/* Hide scrollbar but keep scroll */}
@@ -274,13 +434,97 @@ export default function MonthlyReportClient() {
         }
       `}</style>
 
+      {/* Access / Role banner (Daily pattern) */}
+      <div className={cx("rounded-2xl border p-4 shadow-[0_16px_36px_rgba(15,23,42,0.08)]", toneStyles(props.canRecompute ? "violet" : "warn").soft)}>
+        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="text-sm font-extrabold tracking-tight text-slate-950">Aylık Rapor</div>
+              <PillBadge tone="violet">Monthly</PillBadge>
+              <PillBadge tone="neutral">Role: {props.role}</PillBadge>
+              {!props.canRecompute ? <PillBadge tone="warn">Read-only</PillBadge> : <PillBadge tone="good">Recompute açık</PillBadge>}
+            </div>
+            <div className="mt-1 text-sm text-slate-600 font-medium leading-relaxed">
+              Bu ekran ay özetini gösterir. Recompute, operasyonel bir aksiyondur ve sadece yetkili roller tarafından çalıştırılabilir.
+            </div>
+            {!props.canRecompute ? (
+              <div className="mt-2 text-[11px] text-amber-900/80">
+                Not: Görülen sonuçlar en son yapılan hesap çıktısıdır. Güncelleme için yetkili bir rol ile recompute gerekir.
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+      
+      {/* Coverage / completeness */}
+      {coverage ? (
+        <div className={cx("rounded-2xl border p-4 shadow-[0_16px_36px_rgba(15,23,42,0.08)]", toneStyles(coverageTone).soft)}>
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="text-sm font-extrabold tracking-tight text-slate-950">Coverage</div>
+                <PillBadge tone={coverageTone}>
+                  {coverage.isComplete ? "Complete" : "Incomplete"}
+                </PillBadge>
+                <PillBadge tone="neutral">%{coverage.coveragePct}</PillBadge>
+              </div>
+              <div className="mt-1 text-sm font-medium leading-relaxed text-slate-600">
+                Monthly rapor yalnızca mevcut günlük hesap kayıtlarını toplar. Eksik daily coverage varsa bu ayın rakamları kısmi olabilir.
+              </div>
+              <div className="mt-3 flex max-w-full flex-wrap items-center gap-2 text-xs">
+                <span className="inline-flex items-center gap-2 rounded-full bg-slate-100/90 px-2.5 py-1 text-slate-700 ring-1 ring-slate-200/80">
+                  Beklenen Satır <span className="font-semibold">{coverage.expectedRows}</span>
+                </span>
+                <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50/90 px-2.5 py-1 text-emerald-800 ring-1 ring-emerald-200/70">
+                  Hesaplanan <span className="font-semibold">{coverage.computedRows}</span>
+                </span>
+                <span className="inline-flex items-center gap-2 rounded-full bg-amber-50/90 px-2.5 py-1 text-amber-900 ring-1 ring-amber-200/70">
+                  Eksik <span className="font-semibold">{coverage.missingRows}</span>
+                </span>
+                <span className="inline-flex items-center gap-2 rounded-full bg-indigo-50/90 px-2.5 py-1 text-indigo-800 ring-1 ring-indigo-200/70">
+                  Personel <span className="font-semibold">{coverage.expectedEmployeeCount}</span>
+                </span>
+                <span className="inline-flex items-center gap-2 rounded-full bg-slate-100/90 px-2.5 py-1 text-slate-700 ring-1 ring-slate-200/80">
+                  Gün <span className="font-semibold">{coverage.daysInMonth}</span>
+                </span>
+              </div>
+              {!coverage.isComplete && (coverage.missingDayKeys?.length ?? 0) > 0 ? (
+                <div className="mt-3 text-[11px] text-slate-600">
+                  Eksik gün örnekleri: {coverage.missingDayKeys.slice(0, 8).join(", ")}
+                  {coverage.missingDayKeys.length > 8 ? " ..." : ""}
+                </div>
+              ) : null}
+            </div>
+
+            {!coverage.isComplete ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <a
+                  href="/admin/recompute-required"
+                  className="inline-flex h-10 items-center justify-center rounded-xl border border-indigo-400/30 bg-[linear-gradient(135deg,#4f46e5,#7c3aed)] px-4 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(79,70,229,0.22)] hover:brightness-105"
+                  title="Eksik günlük hesaplar için recompute kuyruğunu aç"
+                >
+                  Recompute Kuyruğunu Aç
+                </a>
+                <a
+                  href="/reports/daily"
+                  className="inline-flex h-10 items-center justify-center rounded-xl border border-slate-200/80 bg-white/90 px-4 text-sm font-semibold text-slate-900 shadow-[0_10px_24px_rgba(15,23,42,0.05)] hover:border-indigo-200 hover:bg-indigo-50/50"
+                  title="Günlük coverage ve sonuçları incele"
+                >
+                  Daily Rapor
+                </a>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
       {/* Toolbar */}
-      <div className="flex w-full min-w-0 flex-col gap-3 overflow-hidden rounded-xl border border-zinc-200 bg-white p-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex w-full min-w-0 flex-col gap-3 overflow-hidden rounded-2xl border border-slate-200/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(248,250,252,0.94))] p-4 shadow-[0_14px_32px_rgba(15,23,42,0.06)] sm:flex-row sm:items-end sm:justify-between">
         <div className="flex flex-wrap items-end gap-3">
           <label className="grid gap-1.5">
-            <span className="text-sm font-medium text-zinc-700">Month</span>
+            <span className="text-sm font-medium text-slate-700">Month</span>
             <input
-              className="h-10 rounded-lg border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-300"
+              className="h-10 rounded-xl border border-slate-200/80 bg-white/90 px-3 text-sm text-slate-800 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/20"
               type="month"
               value={month}
               onChange={(e) => setMonth(e.target.value)}
@@ -288,39 +532,33 @@ export default function MonthlyReportClient() {
             />
           </label>
 
-          <button
-            type="button"
+          <Button
+            variant="primary"
             onClick={recomputeMonth}
-            disabled={loadingRecompute}
-            title="Seçili ayın tüm günlerini recompute eder ve sonucu senkron döner"
-            className="inline-flex h-10 items-center justify-center rounded-lg bg-zinc-900 px-4 text-sm font-semibold text-white shadow-sm hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+            disabled={loadingRecompute || !props.canRecompute}
+            title={!props.canRecompute ? "Bu rolde Recompute yetkisi yok" : "Seçili ay aralığı için recompute job oluştur"}
           >
             {loadingRecompute ? "Recomputing…" : "Recompute"}
-          </button>
+          </Button>
 
-          <button
-            type="button"
-            onClick={() => load()}
-            disabled={loading}
-            className="inline-flex h-10 items-center justify-center rounded-lg border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-900 shadow-sm hover:bg-zinc-50 disabled:cursor-not-allowed"
-          >
+          <Button variant="secondary" onClick={() => load()} disabled={loading} title="Listeyi yenile">
             {loading ? "Loading…" : "Refresh"}
-          </button>
+          </Button>
 
           <a
             href={`/api/reports/monthly/export?month=${encodeURIComponent(month)}`}
-            className="inline-flex h-10 items-center justify-center rounded-lg border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-900 shadow-sm hover:bg-zinc-50"
-            title="Excel için CSV indirir (önce Recompute yapıp sonra indirmeniz önerilir)"
+            className="inline-flex h-10 items-center justify-center rounded-xl border border-slate-200/80 bg-white/90 px-4 text-sm font-semibold text-slate-900 shadow-[0_10px_24px_rgba(15,23,42,0.05)] hover:border-indigo-200 hover:bg-indigo-50/50"
+            title="Excel için CSV indirir. Eksik coverage varsa dosya kısmi sonuç içerebilir."
           >
             CSV İndir
           </a>
           <a
             href={`/api/reports/monthly/anomalies/export?month=${encodeURIComponent(month)}`}
             className={
-              "inline-flex h-10 items-center justify-center rounded-lg border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-900 shadow-sm hover:bg-zinc-50 " +
+              "inline-flex h-10 items-center justify-center rounded-xl border border-slate-200/80 bg-white/90 px-4 text-sm font-semibold text-slate-900 shadow-[0_10px_24px_rgba(15,23,42,0.05)] hover:border-indigo-200 hover:bg-indigo-50/50 " +
               (loading ? "pointer-events-none opacity-50" : "")
             }
-            title="Seçili ayın anomaly kayıtlarını CSV olarak indirir (gün + personel satırları)"
+            title="Seçili ayın anomaly kayıtlarını CSV olarak indirir. Eksik coverage varsa dosya kısmi olabilir."
           >
             Anomali CSV
           </a>
@@ -338,18 +576,18 @@ export default function MonthlyReportClient() {
            onClick={() => setFilter("ALL")}
            className={
              "inline-flex max-w-full items-center gap-2 truncate rounded-full px-2.5 py-1 " +
-             (filter === "ALL" ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-700")
+             (filter === "ALL" ? "bg-[linear-gradient(135deg,#312e81,#4f46e5)] text-white shadow-[0_12px_24px_rgba(79,70,229,0.20)]" : "bg-slate-100/90 text-slate-700 ring-1 ring-slate-200/80")
            }
            title="Filtreyi temizle"
          >
            Employees <span className="font-semibold">{summary.employees}</span>
          </button>
 
-         <span className="inline-flex max-w-full items-center gap-2 truncate rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700">
+         <span className="inline-flex max-w-full items-center gap-2 truncate rounded-full bg-emerald-50/90 px-2.5 py-1 text-emerald-800 ring-1 ring-emerald-200/70">
            Worked <span className="font-semibold">{summary.workedMinutes}</span>
          </span>
 
-         <span className="inline-flex max-w-full items-center gap-2 truncate rounded-full bg-indigo-50 px-2.5 py-1 text-indigo-700">
+         <span className="inline-flex max-w-full items-center gap-2 truncate rounded-full bg-indigo-50/90 px-2.5 py-1 text-indigo-800 ring-1 ring-indigo-200/70">
            OT <span className="font-semibold">{summary.overtimeMinutes}</span>
          </span>
 
@@ -358,7 +596,7 @@ export default function MonthlyReportClient() {
            onClick={() => setFilter(filter === "MISSING_PUNCH" ? "ALL" : "MISSING_PUNCH")}
            className={
              "inline-flex max-w-full items-center gap-2 truncate rounded-full px-2.5 py-1 " +
-             (filter === "MISSING_PUNCH" ? "bg-amber-600 text-white" : "bg-amber-50 text-amber-800")
+             (filter === "MISSING_PUNCH" ? "bg-[linear-gradient(135deg,#d97706,#f59e0b)] text-white shadow-[0_12px_24px_rgba(217,119,6,0.18)]" : "bg-amber-50/90 text-amber-900 ring-1 ring-amber-200/70")
            }
            title="Sadece MissingPunch olanları göster"
          >
@@ -370,7 +608,7 @@ export default function MonthlyReportClient() {
            onClick={() => setFilter(filter === "MANUAL" ? "ALL" : "MANUAL")}
            className={
              "inline-flex max-w-full items-center gap-2 truncate rounded-full px-2.5 py-1 " +
-             (filter === "MANUAL" ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-700")
+             (filter === "MANUAL" ? "bg-[linear-gradient(135deg,#0f172a,#334155)] text-white shadow-[0_12px_24px_rgba(15,23,42,0.18)]" : "bg-slate-100/90 text-slate-700 ring-1 ring-slate-200/80")
            }
            title="Sadece manual override olan personeller"
          >
@@ -382,7 +620,7 @@ export default function MonthlyReportClient() {
            onClick={() => setFilter(filter === "HAS_ANY_ANOMALY" ? "ALL" : "HAS_ANY_ANOMALY")}
            className={
              "inline-flex max-w-full items-center gap-2 truncate rounded-full px-2.5 py-1 " +
-             (filter === "HAS_ANY_ANOMALY" ? "bg-rose-600 text-white" : "bg-rose-50 text-rose-700")
+             (filter === "HAS_ANY_ANOMALY" ? "bg-[linear-gradient(135deg,#be123c,#f43f5e)] text-white shadow-[0_12px_24px_rgba(190,24,93,0.18)]" : "bg-rose-50/90 text-rose-800 ring-1 ring-rose-200/70")
            }
            title="Ay içinde en az 1 anomali olanlar (detay yüklendiyse kesin, değilse MissingPunch üzerinden tahmini)"
          >
@@ -390,15 +628,46 @@ export default function MonthlyReportClient() {
          </button>
         </div>
       </div>
+      
+      {notice ? (
+        <div className={cx("flex items-start justify-between gap-3 rounded-2xl border px-4 py-3 text-sm", toneStyles("warn").soft)}>
+          <div className="text-amber-900 font-semibold">{notice}</div>
+          <Button variant="ghost" onClick={() => setNotice(null)} title="Kapat">
+            <span className="text-amber-900 font-semibold">Kapat</span>
+          </Button>
+        </div>
+      ) : null}
+
+      {initialLoading ? (
+        <div className="rounded-2xl border border-indigo-200/70 bg-[linear-gradient(135deg,rgba(238,242,255,0.96),rgba(255,255,255,0.96))] px-4 py-4 shadow-[0_16px_36px_rgba(79,70,229,0.08)]">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 h-5 w-5 animate-spin rounded-full border-2 border-indigo-200 border-t-indigo-600" />
+            <div className="min-w-0">
+              <div className="text-sm font-extrabold tracking-tight text-slate-950">
+                Aylık kayıtlar hazırlanıyor
+              </div>
+              <div className="mt-1 text-sm font-medium leading-relaxed text-slate-600">
+                Personel satırları, coverage ve özet alanları yükleniyor. Özellikle çok personelli aylarda bu işlem birkaç saniye sürebilir.
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {error && (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+        <div className="rounded-xl border border-rose-200/80 bg-[linear-gradient(135deg,rgba(255,241,242,0.96),rgba(255,255,255,0.94))] px-4 py-3 text-sm text-rose-900 shadow-[0_12px_28px_rgba(244,63,94,0.08)]">
           {error}
         </div>
       )}
 
       {/* Table */}
-      <div className="max-w-full rounded-xl border border-zinc-200 bg-white">
+      <div className="relative max-w-full rounded-2xl border border-slate-200/75 bg-white/88 shadow-[0_18px_38px_rgba(15,23,42,0.06)] backdrop-blur-sm">
+         {refreshing ? (
+           <div className="pointer-events-none absolute right-3 top-3 z-20 inline-flex items-center gap-2 rounded-full border border-indigo-200/70 bg-white/95 px-3 py-1.5 text-xs font-semibold text-indigo-700 shadow-[0_10px_24px_rgba(79,70,229,0.10)]">
+             <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-indigo-200 border-t-indigo-600" />
+             Liste güncelleniyor…
+           </div>
+         ) : null}
          {/* 
            IMPORTANT:
            - Pinned sidebar narrows the content area.
@@ -417,18 +686,43 @@ export default function MonthlyReportClient() {
                <col className="w-[160px]" />
                <col className="w-[110px]" />
             </colgroup>
-            <thead className="sticky top-0 z-10 bg-white">
-              <tr className="text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                <th className="border-b border-zinc-200 px-3 py-2">Code</th>
-                <th className="border-b border-zinc-200 px-3 py-2">Name</th>
-                <th className="border-b border-zinc-200 px-3 py-2">Shift</th>
-                <th className="border-b border-zinc-200 px-3 py-2">Worked</th>
-                <th className="border-b border-zinc-200 px-3 py-2">Days</th>
-                <th className="border-b border-zinc-200 px-3 py-2 text-left">Actions</th>
+            <thead className="sticky top-0 z-10 bg-[linear-gradient(180deg,rgba(238,242,255,0.96),rgba(248,250,252,0.96))]">
+              <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                <th className="border-b border-slate-200 px-3 py-2">Code</th>
+                <th className="border-b border-slate-200 px-3 py-2">Name</th>
+                <th className="border-b border-slate-200 px-3 py-2">Shift</th>
+                <th className="border-b border-slate-200 px-3 py-2">Worked</th>
+                <th className="border-b border-slate-200 px-3 py-2">Days</th>
+                <th className="border-b border-slate-200 px-3 py-2 text-left">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {visibleItems.map((it: any) => {
+              {initialLoading
+                ? Array.from({ length: 8 }).map((_, idx) => (
+                    <tr key={`monthly-skeleton-${idx}`} className="border-t border-zinc-100">
+                      <td className="px-3 py-3">
+                        <SkeletonLine className="h-4 w-16" />
+                      </td>
+                      <td className="px-3 py-3">
+                        <SkeletonLine className="h-4 w-40" />
+                      </td>
+                      <td className="px-3 py-3">
+                        <SkeletonLine className="h-4 w-full max-w-[220px]" />
+                      </td>
+                      <td className="px-3 py-3">
+                        <SkeletonLine className="h-4 w-14" />
+                      </td>
+                      <td className="px-3 py-3">
+                        <SkeletonLine className="h-4 w-24" />
+                      </td>
+                      <td className="px-3 py-3">
+                        <SkeletonLine className="h-8 w-24 rounded-md" />
+                      </td>
+                    </tr>
+                  ))
+                : null}
+
+              {!initialLoading && visibleItems.map((it: any) => {
                 const key = rowKey(it);
                 const isOpen = !!openRows[key];
                 const shiftText = stripEmoji(renderShiftSummary(it));
@@ -463,7 +757,7 @@ export default function MonthlyReportClient() {
                       <td className="whitespace-nowrap px-3 py-2 text-xs text-zinc-700">{fmtDaysShort(it)}</td>                     
                       <td className="whitespace-nowrap px-3 py-2">
                         <div className="flex justify-start">
-                          <span className="inline-flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-semibold text-zinc-700">
+                          <span className="inline-flex items-center gap-2 rounded-md border border-slate-200/80 bg-white/90 px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-[0_6px_16px_rgba(15,23,42,0.04)]">
                             <span className="font-mono">{isOpen ? "▾" : "▸"}</span>
                             Details
                           </span>
@@ -476,7 +770,7 @@ export default function MonthlyReportClient() {
                         <td colSpan={6} className="border-t border-dashed border-zinc-200 px-3 py-3">
                           <div className="grid gap-3 md:grid-cols-3">
                             {/* Dakikalar */}
-                            <div className="rounded-lg border border-zinc-200 bg-white p-3">
+                            <div className="rounded-xl border border-indigo-200/45 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(238,242,255,0.72))] p-3 shadow-[0_10px_24px_rgba(99,102,241,0.06)]">
                               <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Dakikalar</div>
                               <div className="mt-2 grid gap-1 text-sm text-zinc-900">
                                 <div className="flex justify-between gap-3">
@@ -507,7 +801,7 @@ export default function MonthlyReportClient() {
                             </div>
 
                             {/* Günler */}
-                            <div className="rounded-lg border border-zinc-200 bg-white p-3">
+                            <div className="rounded-xl border border-sky-200/45 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(240,249,255,0.72))] p-3 shadow-[0_10px_24px_rgba(14,165,233,0.06)]">
                               <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Günler</div>
                               <div className="mt-2 grid gap-1 text-sm text-zinc-900">
                                 <div className="flex justify-between gap-3">
@@ -534,7 +828,7 @@ export default function MonthlyReportClient() {
                             </div>
 
                             {/* Vardiya Kaynağı */}
-                            <div className="rounded-lg border border-zinc-200 bg-white p-3">
+                            <div className="rounded-xl border border-violet-200/45 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(245,243,255,0.72))] p-3 shadow-[0_10px_24px_rgba(139,92,246,0.06)]">
                               <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Vardiya Kaynağı</div>
                               <div className="mt-2 grid gap-1 text-sm text-zinc-900">
                                 <div className="flex justify-between gap-3">
@@ -562,7 +856,7 @@ export default function MonthlyReportClient() {
                           </div>
 
                           {/* Anomali Günleri */}
-                          <div className="mt-3 rounded-lg border border-amber-200 bg-white p-3">
+                          <div className="mt-3 rounded-xl border border-amber-200/80 bg-[linear-gradient(180deg,rgba(255,251,235,0.96),rgba(255,255,255,0.94))] p-3 shadow-[0_10px_24px_rgba(245,158,11,0.06)]">
                             <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">
                               Anomali Günleri
                             </div>
@@ -593,7 +887,7 @@ export default function MonthlyReportClient() {
                           </div>
 
                           {manual ? (
-                            <div className="mt-3 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700">
+                            <div className="mt-3 rounded-xl border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.92))] px-3 py-2 text-sm text-slate-700">
                               Bu personelde ay içinde{" "}
                               <span className="font-semibold">{fmtMin(it.manualDays)}</span> gün{" "}
                               <span className="font-semibold">Manual Adjustment</span> uygulanmış.
@@ -607,7 +901,7 @@ export default function MonthlyReportClient() {
                   </Fragment>
                 );
               })}
-              {visibleItems.length === 0 && (
+              {!loading && visibleItems.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-3 py-6 text-center text-sm text-zinc-600">
                     Sonuç yok (filtreyi temizlemek için Employees’e tıklayın).

@@ -6,7 +6,7 @@ import { adminUpdateCompanyName, getCompanyBundle } from "@/src/services/company
 
 export async function GET() {
   try {
-    await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR"]);
+    await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN", "HR_OPERATOR", "SUPERVISOR"]);
     const data = await getCompanyBundle();
     return NextResponse.json(data);
   } catch (err) {

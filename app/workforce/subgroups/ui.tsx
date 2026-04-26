@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
 type Group = { id: string; code: string; name: string };
@@ -106,7 +106,20 @@ function Button({
   );
 }
 
-export default function WorkforceSubgroupsClient() {
+function roleLabel(role: string) {
+  switch (role) {
+    case "SYSTEM_ADMIN":
+    case "HR_CONFIG_ADMIN":
+    case "HR_OPERATOR":
+    case "SUPERVISOR":
+      return role;
+    default:
+      return role || "UNKNOWN";
+  }
+}
+
+export default function WorkforceSubgroupsClient(props: { canWrite: boolean; role: string }) {
+  const { canWrite, role } = props;
   const [items, setItems] = useState<SubgroupItem[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [ruleSets, setRuleSets] = useState<RuleSet[]>([]);
@@ -124,7 +137,7 @@ export default function WorkforceSubgroupsClient() {
 
   const [assignRuleSetIdBySubgroup, setAssignRuleSetIdBySubgroup] = useState<Record<string, string>>({});
 
-  async function loadAll() {
+  const loadAll = useCallback(async () => {
     setLoading(true);
     try {
       const [sgRes, gRes, rsRes] = await Promise.all([
@@ -145,11 +158,22 @@ export default function WorkforceSubgroupsClient() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [createGroupId]);
 
   useEffect(() => {
     loadAll();
-  }, []);
+  }, [loadAll]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash.replace(/^#/, "").trim();
+    if (!hash) return;
+    const target = document.getElementById(hash);
+    if (!target) return;
+    window.requestAnimationFrame(() => {
+      target.scrollIntoView({ block: "center" });
+    });
+  }, [items]);
 
   useEffect(() => {
     if (!editing) return;
@@ -159,6 +183,9 @@ export default function WorkforceSubgroupsClient() {
   }, [editing]);
 
   async function createSubgroup() {
+    if (!canWrite) {
+      return; // RBAC: avoid forbidden POST + silent failure
+    }
     if (!createCode.trim() || !createName.trim() || !createGroupId) return;
     setLoading(true);
     try {
@@ -178,6 +205,9 @@ export default function WorkforceSubgroupsClient() {
   }
 
   async function saveEdit() {
+    if (!canWrite) {
+      return; // RBAC
+    }
     if (!editingId) return;
     setLoading(true);
     try {
@@ -196,6 +226,9 @@ export default function WorkforceSubgroupsClient() {
   }
 
   async function deleteSubgroup(id: string) {
+    if (!canWrite) {
+      return; // RBAC
+    }
     if (!id) return;
     setLoading(true);
     try {
@@ -211,6 +244,9 @@ export default function WorkforceSubgroupsClient() {
   }
 
   async function assignPolicy(subgroupId: string) {
+    if (!canWrite) {
+      return; // RBAC
+    }
     const ruleSetId = String(assignRuleSetIdBySubgroup[subgroupId] ?? "").trim();
     if (!ruleSetId) return;
     setLoading(true);
@@ -238,6 +274,8 @@ export default function WorkforceSubgroupsClient() {
               <div className="text-lg font-extrabold tracking-tight text-zinc-900">Alt Segmentler</div>
               <PillBadge tone="violet">Employee Subgroups</PillBadge>
               {loading ? <PillBadge tone="warn">Yükleniyor</PillBadge> : null}
+              <PillBadge tone={canWrite ? "good" : "warn"}>ROL: {roleLabel(role)}</PillBadge>
+              {!canWrite ? <PillBadge tone="warn">Read-only</PillBadge> : null}
             </div>
             <div className="mt-1 text-sm text-zinc-600 font-medium leading-relaxed">
               Alt segment; bir segmentin altında daha ince kırılımdır (örn. <b>WHITE_MANAGER</b>, <b>BLUE_NIGHT</b>).
@@ -276,6 +314,18 @@ export default function WorkforceSubgroupsClient() {
           </div>
         </div>
 
+        {!canWrite ? (
+          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+            <div className="text-xs font-extrabold text-amber-900 uppercase tracking-wider">Yetki uyarısı</div>
+            <div className="mt-1 text-sm text-amber-900/90 font-semibold">
+              Bu sayfa konfigürasyon ekranıdır. Alt segment oluşturma/düzenleme/silme ve kural seti atama için yetkin yok.
+            </div>
+            <div className="mt-1 text-[11px] text-amber-900/70">
+              Gerekli rol: <b>CONFIG_WRITE</b> (SYSTEM_ADMIN veya HR_CONFIG_ADMIN)
+            </div>
+          </div>
+        ) : null}
+
         <div className={cx("mt-4 rounded-2xl border px-4 py-3", toneStyles("warn").soft)}>
           <div className="text-xs font-extrabold text-amber-900 uppercase tracking-wider">Kısa hatırlatma</div>
           <div className="mt-1 text-sm text-amber-900/90 font-semibold">
@@ -306,17 +356,20 @@ export default function WorkforceSubgroupsClient() {
             className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
             placeholder="Kod (örn: WHITE_MANAGER)"
             value={createCode}
+            disabled={!canWrite || loading}
             onChange={(e) => setCreateCode(e.target.value)}
           />
           <input
             className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
             placeholder="Alt segment adı (örn: Beyaz Yaka Yönetici)"
             value={createName}
+            disabled={!canWrite || loading}
             onChange={(e) => setCreateName(e.target.value)}
           />
           <select
             className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
             value={createGroupId}
+            disabled={!canWrite || loading}
             onChange={(e) => setCreateGroupId(e.target.value)}
           >
             {groups.map((g) => (
@@ -328,7 +381,7 @@ export default function WorkforceSubgroupsClient() {
           <Button
             variant="primary"
             onClick={createSubgroup}
-            disabled={loading || !createCode.trim() || !createName.trim() || !createGroupId}
+            disabled={!canWrite || loading || !createCode.trim() || !createName.trim() || !createGroupId}
             title={!createCode.trim() || !createName.trim() || !createGroupId ? "Kod, isim ve segment zorunlu" : "Alt segment oluştur"}
           >
             Oluştur
@@ -364,7 +417,7 @@ export default function WorkforceSubgroupsClient() {
               {items.map((s) => {
                 const selectedRuleSetId = assignRuleSetIdBySubgroup[s.id] ?? "";
                 return (
-                  <tr key={s.id} className="border-t border-zinc-200/60 hover:bg-zinc-50/40">
+                  <tr id={`subgroup-${s.id}`} key={s.id} className="border-t border-zinc-200/60 hover:bg-zinc-50/40 scroll-mt-28">
                     <td className="px-4 py-3">
                       <span className="inline-flex items-center rounded-xl bg-zinc-100 px-2 py-1 font-mono text-xs font-bold text-zinc-800 ring-1 ring-inset ring-zinc-200/70">
                         {s.code}
@@ -398,6 +451,7 @@ export default function WorkforceSubgroupsClient() {
                           <select
                             className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                             value={selectedRuleSetId}
+                            disabled={!canWrite || loading}
                             onChange={(e) =>
                               setAssignRuleSetIdBySubgroup((st) => ({ ...st, [s.id]: e.target.value }))
                             }
@@ -411,7 +465,7 @@ export default function WorkforceSubgroupsClient() {
                           </select>
                           <Button
                             variant="secondary"
-                            disabled={loading || !String(selectedRuleSetId).trim()}
+                            disabled={!canWrite || loading || !String(selectedRuleSetId).trim()}
                             onClick={() => assignPolicy(s.id)}
                             title={!String(selectedRuleSetId).trim() ? "Önce kural seti seçin" : "Seçili kural setini ata"}
                           >
@@ -422,10 +476,20 @@ export default function WorkforceSubgroupsClient() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex justify-end gap-2">
-                        <Button variant="secondary" onClick={() => setEditingId(s.id)} disabled={loading}>
+                        <Button
+                          variant="secondary"
+                          onClick={() => setEditingId(s.id)}
+                          disabled={!canWrite || loading}
+                          title={!canWrite ? "Read-only" : "Alt segmenti düzenle"}
+                        >
                           Düzenle
                         </Button>
-                        <Button variant="ghost" onClick={() => deleteSubgroup(s.id)} disabled={loading} title="Alt segmenti sil">
+                        <Button
+                          variant="ghost"
+                          onClick={() => deleteSubgroup(s.id)}
+                          disabled={!canWrite || loading}
+                          title={!canWrite ? "Read-only" : "Alt segmenti sil"}
+                        >
                           <span className="text-red-700 font-semibold">Sil</span>
                         </Button>
                       </div>
@@ -468,16 +532,19 @@ export default function WorkforceSubgroupsClient() {
             <input
               className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
               value={editCode}
+              disabled={!canWrite || loading}
               onChange={(e) => setEditCode(e.target.value)}
             />
             <input
               className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
               value={editName}
+              disabled={!canWrite || loading}
               onChange={(e) => setEditName(e.target.value)}
             />
             <select
               className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
               value={editGroupId}
+              disabled={!canWrite || loading}
               onChange={(e) => setEditGroupId(e.target.value)}
             >
               {groups.map((g) => (
@@ -486,7 +553,7 @@ export default function WorkforceSubgroupsClient() {
                 </option>
               ))}
             </select>
-            <Button variant="primary" onClick={saveEdit} disabled={loading || !editingId}>
+            <Button variant="primary" onClick={saveEdit} disabled={!canWrite || loading || !editingId} title={!canWrite ? "Read-only" : "Kaydet"}>
               Kaydet
             </Button>
           </div>

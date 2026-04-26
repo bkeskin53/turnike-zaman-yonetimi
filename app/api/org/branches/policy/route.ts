@@ -9,7 +9,8 @@ import {
 
 export async function GET() {
   try {
-    await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR"]);
+    // Read-only master data: allow Supervisor to view branch -> rule set
+    await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN", "HR_OPERATOR", "SUPERVISOR"]);
     const data = await listBranchesWithPolicyRuleSet();
     return NextResponse.json(data);
   } catch (err) {
@@ -19,7 +20,8 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR"]);
+    // CONFIG write: HR_CONFIG_ADMIN must be able to update branch rule set; HR_OPERATOR must NOT
+    await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN"]);
     const body = await req.json().catch(() => null);
     const branchId = String(body?.branchId ?? "").trim();
     if (!branchId) return NextResponse.json({ error: "BRANCH_ID_REQUIRED" }, { status: 400 });

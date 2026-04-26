@@ -10,6 +10,10 @@ import { upsertWeeklyShiftPlan } from "@/src/repositories/shiftPlan.repo";
 import { auditLog } from "@/src/services/audit.service";
 import { computeWeekStartUTC } from "@/src/services/shiftPlan.service";
 import { findEmployeesNotOverlappingEmploymentRange } from "@/src/services/employmentGuard.service";
+import { writeAudit } from "@/src/audit/writeAudit";
+import { AuditAction, AuditTargetType, UserRole } from "@prisma/client";
+import { markRecomputeRequired } from "@/src/services/recomputeRequired.service";
+import { RecomputeReason } from "@prisma/client";
 
 function isISODate(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
@@ -124,6 +128,30 @@ export async function POST(req: Request) {
           onlyChanged,
         },
       });
+      await writeAudit({
+        req,
+        actorUserId: session.userId,
+        actorRole: session.role as unknown as UserRole,
+        action: AuditAction.SHIFT_ASSIGNMENT_UPDATED,
+        targetType: AuditTargetType.SHIFT_ASSIGNMENT,
+        targetId: weekStartDate,
+        details: {
+          op: "BULK_ASSIGN",
+          weekStartDate,
+          shiftTemplateId,
+          requested: uniq.length,
+          updated: 0,
+          skipped,
+          onlyChanged,
+        },
+      });
+      await markRecomputeRequired({
+        companyId,
+        reason: RecomputeReason.SHIFT_ASSIGNMENT_UPDATED,
+        createdByUserId: session.userId,
+        rangeStartDayKey: weekStartDate,
+        rangeEndDayKey: weekEndDate,
+      });
       return NextResponse.json({ ok: true, updated: 0, skipped, requested: uniq.length });
     }
 
@@ -155,6 +183,32 @@ export async function POST(req: Request) {
         skipped,
         onlyChanged,
       },
+    });
+
+    await writeAudit({
+      req,
+      actorUserId: session.userId,
+      actorRole: session.role as unknown as UserRole,
+      action: AuditAction.SHIFT_ASSIGNMENT_UPDATED,
+      targetType: AuditTargetType.SHIFT_ASSIGNMENT,
+      targetId: weekStartDate,
+      details: {
+        op: "BULK_ASSIGN",
+        weekStartDate,
+        shiftTemplateId,
+        requested: uniq.length,
+        updated: toUpdate.length,
+        skipped,
+        onlyChanged,
+      },
+    });
+
+    await markRecomputeRequired({
+      companyId,
+      reason: RecomputeReason.SHIFT_ASSIGNMENT_UPDATED,
+      createdByUserId: session.userId,
+      rangeStartDayKey: weekStartDate,
+      rangeEndDayKey: weekEndDate,
     });
 
     return NextResponse.json({ ok: true, updated: toUpdate.length, skipped, requested: uniq.length });

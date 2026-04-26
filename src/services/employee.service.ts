@@ -1,5 +1,4 @@
 import { getActiveCompanyId } from "@/src/services/company.service";
-import { hardDeleteEmployeeRepo } from "@/src/repositories/employee.repo";
 import {
   createEmployeeRepo,
   deactivateEmployeeRepo,
@@ -27,9 +26,4 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
 export async function deactivateEmployee(id: string) {
   const companyId = await getActiveCompanyId();
   return deactivateEmployeeRepo(companyId, id);
-}
-
-export async function hardDeleteEmployee(id: string) {
-  const companyId = await getActiveCompanyId();
-  return hardDeleteEmployeeRepo(companyId, id);
 }

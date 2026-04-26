@@ -1,80 +1,304 @@
-TURNİKE ZAMAN YÖNETİMİ – DEMO KURULUM
+🔷 Turnike Zaman Motoru – GPT Master Talimatları
 
-Bu demo, Node / PostgreSQL kurmadan, sadece Docker ile çalışır.
+Enterprise Workforce Time Management Platform
+(On-Premise / Hybrid Architecture)
 
-1) GEREKSİNİMLER
+🧠 1. Sistem Tanımı
 
-Windows / macOS / Linux
+Turnike Zaman Motoru;
 
-Docker Desktop kurulu olmalı
-(https://www.docker.com/products/docker-desktop/
-)
+çalışanlardan gelen tüm zaman hareketlerini (IN / OUT event’leri):
 
-Not: Bilgisayarda Node.js, npm veya PostgreSQL kurulu olmasına gerek yoktur.
+turnike
+kiosk
+mobil
+manuel giriş
+entegrasyonlar
 
-2) DEMO’YU ÇALIŞTIRMA
+üzerinden toplar ve tek bir deterministic hesap motoru ile değerlendirir.
 
-Zip dosyasını bir klasöre çıkar
-(Örnek: C:\Work\turnike-demo)
+👉 Bu sistem:
 
-Klasör içinde şu dosyalar görünmeli:
+SAP Time Management
+UKG Kronos
 
-docker-compose.demo.yml
+seviyesinde bir enterprise workforce time management engine’dir.
 
-Dockerfile
+👉 Bu bir UI uygulaması değildir
+👉 Bu bir ERP seviyesinde hesap motorudur
 
-.env.demo
+🎯 2. Amaç
 
-Klasör içinde terminal aç:
+Tek bir platform ile:
 
-Windows (PowerShell):
+sabit mesai (09:00–18:00)
+çok vardiyalı üretim
+gece vardiyası (cross-midnight)
+7/24 operasyon
+saha ekipleri
+segment bazlı kurumsal yapı
 
-docker compose -f docker-compose.demo.yml up -d --build
+tam doğrulukla yönetilmelidir.
 
+⚙️ 3. Teknoloji Yığını
+Frontend
+Next.js (App Router)
+React
+TypeScript
+Backend
+Next.js API Routes
+Domain-Driven Service Layer
+Data
+PostgreSQL
+Prisma ORM
+Time Engine
+Luxon (timezone & tarih yönetimi)
+Mimari
+On-Premise uyumlu
+Hybrid deployment
+Stateless API
+Recompute orchestration
+Deterministic engine
+🧠 4. Temel Mimari Prensip
+🔴 Tek Hesap Motoru
 
-macOS / Linux:
+Tüm hesaplamalar:
 
-docker compose -f docker-compose.demo.yml up -d --build
+👉 sadece domain layer içinde yapılır
 
+Kesin kurallar:
+UI hesap yapmaz
+API hesap yapmaz
+Rapor hesap yapmaz
+SQL içinde business logic yok
 
-İlk kurulum 5–15 dakika sürebilir (sadece ilk sefer).
+👉 Tek gerçek veri:
 
-3) UYGULAMAYI AÇMA
+DailyAttendance
 
-Tarayıcıdan:
+🧱 5. Sistem Katmanları
+Company Policy → global varsayılan
+Policy RuleSet → davranış kuralları
+Shift Template → vardiya saatleri
+Work Schedule Pattern → rota
+Assignment → kime ne uygulanır
+Time Evaluation Engine → hesaplama
+🧠 6. Time Evaluation Engine (KRİTİK)
 
-http://localhost:3000
+Bu sistem klasik değildir.
 
+❌ IN → OUT eşleştirme sistemi yok
+✔ Event Ownership sistemi var
 
-Demo ortamında login ekranı yoktur, sistem otomatik açılır.
+🔑 Event Ownership (ÇEKİRDEK MODEL)
 
-4) DEMO’YU DURDURMA
-docker compose -f docker-compose.demo.yml down
+Her event için sistem şu soruyu çözer:
 
-5) TAM SIFIRDAN YENİDEN KURULUM (DB DAHİL)
+👉 “Bu event hangi güne / vardiyaya ait?”
 
-Tüm verileri silip tekrar kurmak için:
+Adaylar:
+CURRENT_DAY
+PREVIOUS_DAY
+NEXT_DAY
+Skorlama:
+tolerance window uyumu
+shift başlangıcına yakınlık
+shift bitişine yakınlık
+direction uyumu
+minimum rest kontrolü
+cross-day penalty
+off-day penalty
 
-docker compose -f docker-compose.demo.yml down -v
-docker compose -f docker-compose.demo.yml up -d --build
+👉 En yüksek skoru alan sahip olur
 
+🔑 Kritik Kural
 
-Bu işlem sadece demo verilerini siler.
+❌ Event önce eşleştirilmez
+✔ Önce sahipliği belirlenir
 
-6) SIK YAŞANAN DURUMLAR
+Sonra:
 
-3000 portu doluysa:
-Başka bir uygulama kapatılmalı veya destek istenmeli.
+ownership → pairing → attendance → anomaly
 
-Docker çalışmıyorsa:
-Docker Desktop açık olmalıdır.
+🔑 Engine Özellikleri
+Next Shift Lookahead
+sonraki vardiyayı aday yapar
+önceki vardiyayı uzatmaz
+tek başına karar vermez
+Multi IN/OUT
+native destek
+segment bazlı çalışma
+Pairing
+ownership sonrası yapılır
+Anomaly
+en son çalışır
+false anomaly üretmez
+📅 7. Canonical Day
 
-7) DESTEK
+Tüm sistem:
 
-Herhangi bir sorun yaşanırsa, sadece şu komut çıktıları yeterlidir:
+👉 policy.timezone bazlıdır
 
-docker compose -f docker-compose.demo.yml ps
+Tek gerçek:
 
+👉 dayKey
 
-Turnike Zaman Yönetimi – Demo Paket
-(On-prem, container tabanlı çalışır)
+🔄 8. Recompute Modeli
+
+Zaman hesaplama:
+
+❌ statik değildir
+✔ her zaman yeniden hesaplanır
+
+Tetikleyiciler:
+policy değişimi
+vardiya değişimi
+rota değişimi
+event değişimi
+⚠️ 9. OFF vs LEAVE
+OFF → planlı çalışmama
+LEAVE → izin (bordro etkiler)
+🔐 10. Veri Güvenliği
+master veri import ile override edilmez
+employeeCode tek kimliktir
+audit log zorunludur
+recompute zorunludur
+🎨 11. UI Kuralı
+
+UI:
+
+hesap yapmaz
+sadece gösterir
+🕒 12. Zaman Semantiği (KRİTİK – YENİ)
+
+Bu sistemde zaman 3 farklı kavramdır ve ASLA karıştırılmaz:
+
+12.1 Absolute Event Time
+
+Gerçek olay anı
+
+Örnek:
+
+RawEvent.occurredAt
+NormalizedEvent.occurredAt
+DailyAttendance.firstIn / lastOut
+Kurallar:
+DB: TIMESTAMPTZ
+UTC instant saklanır
+JSON: ISO UTC (Z)
+UI: policy timezone ile gösterir
+12.2 Business Date
+
+İş günü / dönem
+
+Örnek:
+
+workDate
+weekStartDate
+Kurallar:
+DB: DATE
+timezone içermez
+dayKey ile uyumludur
+12.3 Shift Clock
+startMinute / endMinute
+local saat
+Kurallar:
+timestamp değildir
+UTC’ye çevrilmez
+🔑 Altın Zaman Kuralı
+DB → UTC timestamptz
+İş günü → date / dayKey
+UI → policy timezone
+🔧 Serialization Kuralı
+
+❌ Browser timezone kullanılmaz
+✔ Policy timezone kullanılır
+
+Akış:
+
+UI input → policy timezone parse → UTC ISO → DB
+⚠️ Geçmiş Kritik Bug (Çözüldü)
+
+Sorun:
+
+datetime-local yanlış parse
+timestamp without time zone kullanımı
+
+Sonuç:
+
+yanlış saatler
+cross-midnight bug
+false anomaly
+
+Çözüm:
+
+UI timezone düzeltildi
+DB timestamptz yapıldı
+engine stabilize oldu
+🤖 13. GPT DAVRANIŞ TALİMATI
+❗ YASAKLAR
+
+GPT:
+
+❌ UI içinde hesap önermez
+❌ API içinde logic yazmaz
+❌ SQL hack önermez
+❌ if/else patch önermez
+❌ “ilk giriş / son çıkış” mantığı kullanmaz
+
+❗ EVENT MODEL HATASI YASAK
+
+❌ IN → OUT pairing varsayımı
+✔ ownership-first model
+
+❗ SINGLE SEGMENT YASAK
+
+❌ tek giriş çıkış varsayımı
+✔ multi segment native
+
+❗ SHORTCUT YASAK
+
+❌ edge-case patch
+✔ root cause çözüm
+
+❗ DETERMINISM
+
+❌ heuristic karar
+✔ deterministic model
+
+❗ RECOMPUTE
+
+❌ save edip geçme
+✔ recompute zorunlu
+
+❗ DOMAIN DIŞI KARAR
+
+❌ UI çözümü
+❌ SQL çözümü
+✔ domain çözümü
+
+✅ 14. GPT NASIL DAVRANMALI?
+
+GPT:
+
+problemi domain açısından analiz eder
+ownership etkisini değerlendirir
+pairing etkisini inceler
+anomaly sonuçlarını kontrol eder
+🧩 ALTIN KURAL
+
+Event’ler önce eşleştirilmez
+Önce hangi güne ait oldukları belirlenir
+
+🚀 SON NOT
+
+Bu sistem:
+
+SAP/Kronos seviyesindedir
+demo değildir
+SaaS oyuncak değildir
+ERP seviyesindedir
+
+Amaç:
+
+👉 Türkiye’nin en sağlam zaman yönetimi motorunu üretmek

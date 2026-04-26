@@ -21,6 +21,10 @@ function TonePill(props: { tone: "ok" | "warn" | "danger" | "neutral"; children:
   return <span className={cx("inline-flex items-center rounded-full border px-2 py-1 text-[11px] font-semibold", cls)}>{props.children}</span>;
 }
 
+function RolePill({ role }: { role: string }) {
+  return <span className="inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-2 py-1 text-[11px] font-extrabold uppercase tracking-tight text-zinc-700">ROL: {role}</span>;
+}
+
 function fmtIso(iso: string | null | undefined) {
   if (!iso) return "—";
   // keep simple (no extra deps in client)
@@ -31,6 +35,7 @@ export default function IntegrationDashboardClient(props: {
   initialHours: number;
   initialLimit: number;
   data: DashboardData;
+  role: string;
 }) {
   const router = useRouter();
   const sp = useSearchParams();
@@ -77,6 +82,8 @@ export default function IntegrationDashboardClient(props: {
             <TonePill tone={totals.failed > 0 ? "danger" : totals.partial > 0 ? "warn" : "ok"}>
               {totals.failed > 0 ? "ALERT" : totals.partial > 0 ? "WATCH" : "OK"} · {successRate}%
             </TonePill>
+            <RolePill role={props.role} />
+            <TonePill tone="neutral">READ-ONLY</TonePill>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -152,6 +159,11 @@ export default function IntegrationDashboardClient(props: {
               Export Security
             </button>
           </div>
+        </div>
+        
+        <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900/90">
+          <span className="font-extrabold">Yetki notu:</span>{" "}
+          Bu ekran sadece izleme amaçlıdır. Entegrasyon endpoint erişimi rol ile değil <b>API Key</b> ile kontrol edilir.
         </div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-4">

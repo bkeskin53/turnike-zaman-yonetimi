@@ -2,10 +2,15 @@ import { NextResponse } from "next/server";
 import { requireRole } from "@/src/auth/guard";
 import { authErrorResponse } from "@/src/utils/api";
 import { clearEmployeeSubgroupPolicyAssignments, setEmployeeSubgroupPolicyAssignment } from "@/src/services/policyAssignment.service";
+import { writeAudit } from "@/src/audit/writeAudit";
+import { AuditAction, AuditTargetType, UserRole } from "@prisma/client";
+import { getActiveCompanyId } from "@/src/services/company.service";
+import { markRecomputeRequired } from "@/src/services/recomputeRequired.service";
+import { RecomputeReason } from "@prisma/client";
 
 export async function POST(req: Request) {
   try {
-    await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN"]);
+    const session = await requireRole(["SYSTEM_ADMIN","HR_CONFIG_ADMIN"]);
     const body = await req.json().catch(() => null);
 
     const employeeSubgroupId = String(body?.employeeSubgroupId ?? "").trim();
@@ -13,6 +18,23 @@ export async function POST(req: Request) {
 
     if (body?.clear === true) {
       const data = await clearEmployeeSubgroupPolicyAssignments({ employeeSubgroupId });
+      await writeAudit({
+        req,
+        actorUserId: session.userId,
+        actorRole: session.role as unknown as UserRole,
+        action: AuditAction.POLICY_ASSIGNMENT_UPDATED,
+        targetType: AuditTargetType.POLICY_ASSIGNMENT,
+        targetId: employeeSubgroupId,
+        details: { op: "CLEAR", scope: "SUBGROUP", employeeSubgroupId },
+      });
+      const companyId = await getActiveCompanyId();
+      await markRecomputeRequired({
+        companyId,
+        reason: RecomputeReason.POLICY_ASSIGNMENT_UPDATED,
+        createdByUserId: session.userId,
+        rangeStartDayKey: null,
+        rangeEndDayKey: null,
+      });
       return NextResponse.json(data);
     }
 
@@ -29,6 +51,31 @@ export async function POST(req: Request) {
       validFromDayKey,
       validToDayKey,
       priority,
+    });
+    await writeAudit({
+      req,
+      actorUserId: session.userId,
+      actorRole: session.role as unknown as UserRole,
+      action: AuditAction.POLICY_ASSIGNMENT_UPDATED,
+      targetType: AuditTargetType.POLICY_ASSIGNMENT,
+      targetId: employeeSubgroupId,
+      details: {
+        op: "ASSIGN",
+        scope: "SUBGROUP",
+        employeeSubgroupId,
+        ruleSetId,
+        validFromDayKey,
+        validToDayKey,
+        priority: typeof priority === "number" ? priority : null,
+      },
+    });
+    const companyId = await getActiveCompanyId();
+    await markRecomputeRequired({
+      companyId,
+      reason: RecomputeReason.POLICY_ASSIGNMENT_UPDATED,
+      createdByUserId: session.userId,
+      rangeStartDayKey: validFromDayKey,
+      rangeEndDayKey: validToDayKey,
     });
     return NextResponse.json(data);
   } catch (err) {

@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { DateTime } from "luxon";
-import { requireRole } from "@/src/auth/guard";
+import { getSessionOrNull, requireRole } from "@/src/auth/guard";
 import { prisma } from "@/src/repositories/prisma";
 import { getActiveCompanyId, getCompanyBundle } from "@/src/services/company.service";
 import { monthlyAnomaliesToCsv } from "@/src/services/reports/monthlyReport.service";
 import { authErrorResponse } from "@/src/utils/api";
+import { getEmployeeScopeWhereForSession } from "@/src/auth/scope";
 
 function parseMonth(v: string | null): string | null {
   const s = (v ?? "").trim();
@@ -25,6 +26,8 @@ export async function GET(req: Request) {
   try {
     // Read-only export (must be authenticated)
     await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN", "HR_OPERATOR", "SUPERVISOR"]);
+    const session = await getSessionOrNull();
+    if (!session) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
 
     const url = new URL(req.url);
     const month = parseMonth(url.searchParams.get("month"));
@@ -34,14 +37,16 @@ export async function GET(req: Request) {
     const bundle = await getCompanyBundle();
     const tz = bundle.policy?.timezone || "Europe/Istanbul";
     const { startUTC, endUTC } = monthRangeLocal(month, tz);
+    const employeeScopeWhere = await getEmployeeScopeWhereForSession(session);
 
     const rows = await prisma.dailyAttendance.findMany({
       where: {
         companyId,
         workDate: { gte: startUTC, lt: endUTC },
         anomalies: { isEmpty: false },
+        ...(employeeScopeWhere ? { employee: employeeScopeWhere } : {}),
       },
-     include: { employee: true },
+      include: { employee: true },
       orderBy: [{ workDate: "asc" }, { employeeId: "asc" }],
     });
 

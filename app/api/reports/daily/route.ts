@@ -4,6 +4,7 @@ import { getActiveCompanyId, getCompanyBundle } from "@/src/services/company.ser
 import { buildDailyReportItems } from "@/src/services/reports/dailyReport.service";
 import { prisma } from "@/src/repositories/prisma";
 import { dbDateFromDayKey } from "@/src/utils/dayKey";
+import { getEmployeeScopeWhereForSession, withCompanyEmployeeWhere } from "@/src/auth/scope";
 
  function asISODate(d: string | null) {
    if (!d) return null;
@@ -37,14 +38,15 @@ import { dbDateFromDayKey } from "@/src/utils/dayKey";
    const { policy } = await getCompanyBundle();
    const tz = policy.timezone || "Europe/Istanbul";
  
-   const items = await buildDailyReportItems({ companyId, date, tz, policy });
+   const employeeScopeWhere = await getEmployeeScopeWhereForSession(session);
+   const items = await buildDailyReportItems({ companyId, date, tz, policy, employeeWhere: employeeScopeWhere });
   // -------------------------------------------------------------
    // Eksik-2: Employment validity dışında kalan personelleri raporla
    // (DailyAttendance üretmeyiz ama kullanıcıya "neden yok?" cevabı vermek için)
    const workDate = dbDateFromDayKey(date);
 
    const allEmployees = await prisma.employee.findMany({
-     where: { companyId },
+     where: withCompanyEmployeeWhere(companyId, employeeScopeWhere),
      select: { id: true, employeeCode: true, firstName: true, lastName: true },
      orderBy: [{ employeeCode: "asc" }],
    });
@@ -53,7 +55,7 @@ import { dbDateFromDayKey } from "@/src/utils/dayKey";
      (
        await prisma.employee.findMany({
          where: {
-           companyId,
+           ...withCompanyEmployeeWhere(companyId, employeeScopeWhere),
            employmentPeriods: {
              some: {
                startDate: { lte: workDate },

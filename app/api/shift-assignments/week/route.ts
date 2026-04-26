@@ -12,7 +12,7 @@ function isISODate(value: string): boolean {
 
 export async function GET(req: Request) {
   try {
-    await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR"]);
+    await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR", "SUPERVISOR"]);
     const companyId = await getActiveCompanyId();
     const { policy } = await getCompanyBundle();
     const tz = policy.timezone || "Europe/Istanbul";

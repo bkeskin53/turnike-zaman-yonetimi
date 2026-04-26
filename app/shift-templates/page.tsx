@@ -1,13 +1,17 @@
 import AppShell from "@/app/_components/AppShellNoSSR";
 import ShiftTemplatesClient from "./ui";
+import { getSessionOrNull } from "@/src/auth/guard";
+import { ROLE_SETS } from "@/src/auth/roleSets";
 
-export default function ShiftTemplatesPage() {
+export default async function ShiftTemplatesPage() {
+  const s = await getSessionOrNull();
+  const canWrite = Boolean(s && ROLE_SETS.CONFIG_WRITE.includes(s.role));
   return (
     <AppShell
       title="Shift Templates"
-      subtitle="Vardiya şablonları (Stage 2) — start/end + signature (+1)"
+      subtitle="Vardiya şablonları — kurumsal kod + start/end + signature (+1) ve özel OFF sistem şablonu"
     >
-      <ShiftTemplatesClient />
+      <ShiftTemplatesClient canWrite={canWrite} />
     </AppShell>
   );
 }

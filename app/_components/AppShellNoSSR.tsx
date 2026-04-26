@@ -53,6 +53,7 @@ function SkeletonShell() {
 
               <div className="flex items-center gap-2">
                 <div className="h-10 w-24 animate-pulse rounded-2xl border border-white/10 bg-white/10" />
+                <div className="h-10 w-24 animate-pulse rounded-2xl border border-white/10 bg-white/10" />
                 <div className="h-10 w-24 animate-pulse rounded-2xl bg-white" />
               </div>
             </div>

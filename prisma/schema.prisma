@@ -10,6 +10,23 @@ enum ImportProfileKind {
   EMPLOYEES
 }
 
+enum ScreenConfigurationScreenKey {
+  EMPLOYEES_CREATE              @map("employees.create")
+  EMPLOYEES_MASTER              @map("employees.master")
+  EMPLOYEES_MASTER_DISPLAY      @map("employees.master.display")
+  EMPLOYEES_MASTER_HISTORY      @map("employees.master.history")
+  EMPLOYEES_MASTER_HISTORY_FORM @map("employees.master.history.form")
+  EMPLOYEES_MASTER_HISTORY_LIST @map("employees.master.history.list")
+}
+
+enum ScreenConfigurationFieldKey {
+  GENDER         @map("gender")
+  EMAIL          @map("email")
+  PHONE          @map("phone")
+  CARD_NO        @map("cardNo")
+  DEVICE_USER_ID @map("deviceUserId")
+}
+
 enum UserRole {
   SYSTEM_ADMIN
   HR_CONFIG_ADMIN
@@ -25,6 +42,69 @@ enum UserDataScope {
   EMPLOYEE_SUBGROUP
 }
 
+enum AttendanceReviewStatus {
+  NONE
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PayrollPeriodStatus {
+  OPEN
+  PRE_CLOSED
+  CLOSED
+}
+
+enum PayrollSnapshotStatus {
+  DRAFT
+  FINAL
+}
+
+enum PayrollSnapshotQuantityUnit {
+  MINUTES
+  DAYS
+  COUNT
+}
+
+enum PayrollCodeMappingItemUnit {
+  MINUTES
+  DAYS
+  COUNT
+}
+
+enum PayrollCodeMappingQuantityStrategy {
+  WORKED_MINUTES
+  OVERTIME_MINUTES
+  FIXED_QUANTITY
+}
+
+enum PayrollAuditEventType {
+  REVIEW_STATUS_CHANGED
+  REVIEW_NOTE_CHANGED
+  PERIOD_PRE_CLOSED
+  PERIOD_CLOSED
+  PERIOD_REOPENED
+  SNAPSHOT_CREATED
+  MONTHLY_EXPORT_CREATED
+  DAILY_EXPORT_CREATED
+  PAYROLL_MAPPING_PROFILE_CREATED
+  PAYROLL_MAPPING_PROFILE_UPDATED
+  PAYROLL_MAPPING_PROFILE_DEFAULT_CHANGED
+  PAYROLL_MAPPING_PROFILE_ACTIVE_CHANGED
+  PAYROLL_MAPPING_ITEM_UPSERTED
+  PAYROLL_MAPPING_ITEM_DEACTIVATED
+}
+
+enum PayrollAuditEntityType {
+  PAYROLL_PERIOD
+  PAYROLL_PERIOD_SNAPSHOT
+  DAILY_ATTENDANCE
+  EMPLOYEE
+  EXPORT
+  PAYROLL_MAPPING_PROFILE
+  PAYROLL_MAPPING_ITEM
+}
+
 enum EmployeeActionType {
   HIRE
   TERMINATE
@@ -35,6 +115,34 @@ enum EmployeeActionType {
 enum OffDayEntryBehavior {
   IGNORE
   FLAG
+  COUNT_AS_OT
+}
+
+enum AttendanceOwnershipAuditDisposition {
+  SCHEDULED
+  VISIBLE_UNSCHEDULED
+  OWNED_OTHER_LOGICAL_DAY
+  IGNORED
+}
+
+enum AttendanceOwnershipAuditOwnerSource {
+  PREVIOUS_DAY
+  CURRENT_DAY
+  NEXT_DAY
+}
+
+/// Event ownership strategy for the attendance engine.
+/// WINDOW = legacy day-window capture
+/// INSTANCE_SCORING = enterprise instance-based ownership
+enum AttendanceOwnershipMode {
+  WINDOW
+  INSTANCE_SCORING
+}
+
+/// How valid unscheduled work should behave in the engine.
+enum UnscheduledWorkBehavior {
+  IGNORE
+  FLAG_ONLY
   COUNT_AS_OT
 }
 
@@ -116,11 +224,170 @@ enum IntegrationLogStatus {
   FAILED
 }
 
+/// Admin audit actions (enterprise traceability).
+enum AuditAction {
+  USER_CREATED
+  USER_ROLE_CHANGED
+  USER_STATUS_CHANGED
+  USER_PASSWORD_RESET
+  SUPERVISOR_SCOPE_UPDATED
+  RECOMPUTE
+  IMPORT
+  POLICY_UPDATE
+  MANUAL_EVENT
+  EMPLOYEE_HARD_DELETE
+
+  RULESET_UPDATED
+  POLICY_ASSIGNMENT_UPDATED
+  SHIFT_TEMPLATE_UPDATED
+  BREAK_PLAN_UPDATED
+  WORK_SCHEDULE_UPDATED
+  SHIFT_ASSIGNMENT_UPDATED
+  WORKFORCE_UPDATED
+  CONFIGURATION_UPDATED
+}
+
+enum AuditTargetType {
+  USER
+  ATTENDANCE
+  EMPLOYEES
+  POLICY
+  EVENT
+
+  RULESET
+  POLICY_ASSIGNMENT
+  SHIFT_TEMPLATE
+  BREAK_PLAN
+  WORK_SCHEDULE
+  SHIFT_ASSIGNMENT
+  WORKFORCE
+  CONFIGURATION
+}
+
+enum RecomputeReason {
+  POLICY_UPDATE
+  RULESET_UPDATED
+  POLICY_ASSIGNMENT_UPDATED
+  SHIFT_TEMPLATE_UPDATED
+  WORK_SCHEDULE_UPDATED
+  SHIFT_ASSIGNMENT_UPDATED
+  WORKFORCE_UPDATED
+}
+
+enum RecomputeStatus {
+  PENDING
+  RUNNING
+  DONE
+}
+
+enum EmployeeImportRunMode {
+  DRY_RUN
+  APPLY
+}
+
+enum EmployeeImportRunStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum EmployeeImportRunOutcome {
+  CLEAN
+  WARNING
+  BLOCKING
+  PARTIAL
+}
+
+model RecomputeRequirement {
+  id        String          @id @default(cuid())
+  companyId String
+  reason    RecomputeReason
+
+  /// Canonical day keys (policy timezone) in YYYY-MM-DD. Nullable = unknown (no guessing).
+  rangeStartDayKey String?
+  rangeEndDayKey   String?
+
+  status RecomputeStatus @default(PENDING)
+
+  createdByUserId String?
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+
+  resolvedByUserId String?
+  resolvedAt       DateTime? @db.Timestamptz(3)
+  lastRunAt        DateTime? @db.Timestamptz(3)
+
+  @@index([companyId, status])
+  @@index([companyId, reason, status])
+  @@index([createdAt])
+}
+
+model EmployeeImportRun {
+  id        String @id @default(cuid())
+  companyId String
+
+  sheetKind  String                    @db.VarChar(32)
+  sheetTitle String                    @db.VarChar(120)
+  mode       EmployeeImportRunMode     @default(APPLY)
+  status     EmployeeImportRunStatus   @default(RUNNING)
+  outcome    EmployeeImportRunOutcome?
+
+  contentHash String @db.VarChar(64)
+  actorUserId String
+
+  requestedCount Int
+  processedCount Int?
+  foundCount     Int?
+  changedCount   Int?
+  unchangedCount Int?
+  rejectedCount  Int?
+  warningCount   Int?
+  errorCount     Int?
+
+  headerSummarySnapshot       Json?
+  codeResolutionSnapshot      Json?
+  applySummarySnapshot        Json?
+  changedEmployeeCodesPreview String[] @default([])
+  warningsPreview             Json?
+  errorsPreview               Json?
+
+  duplicateOfRunId String?
+  failedCode       String? @db.VarChar(100)
+  failedMessage    String? @db.Text
+
+  startedAt  DateTime  @default(now()) @db.Timestamptz(3)
+  finishedAt DateTime? @db.Timestamptz(3)
+
+  company        Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  duplicateOfRun EmployeeImportRun?  @relation("EmployeeImportRunDuplicate", fields: [duplicateOfRunId], references: [id], onDelete: SetNull)
+  duplicateRuns  EmployeeImportRun[] @relation("EmployeeImportRunDuplicate")
+
+  @@index([companyId, mode, startedAt])
+  @@index([companyId, sheetKind, startedAt])
+  @@index([companyId, sheetKind, status, startedAt])
+  @@index([companyId, sheetKind, outcome, startedAt])
+  @@index([companyId, sheetKind, contentHash, startedAt])
+  @@index([actorUserId])
+}
+
+model EmployeeImportApplyLock {
+  id        String @id @default(cuid())
+  companyId String
+
+  sheetKind   String   @db.VarChar(32)
+  actorUserId String
+  acquiredAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, sheetKind])
+  @@index([acquiredAt])
+}
+
 model SystemSetting {
   key       String   @id @db.VarChar(64)
   value     String   @db.Text
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 }
 
 model User {
@@ -135,20 +402,50 @@ model User {
   scopeEmployeeSubgroupIds String[]      @default([])
   isActive                 Boolean       @default(true)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt                     DateTime                @default(now()) @db.Timestamptz(3)
+  updatedAt                     DateTime                @updatedAt @db.Timestamptz(3)
+  auditLogs                     AuditLog[]
+  preClosedPayrollPeriods       PayrollPeriod[]         @relation("PayrollPeriodPreClosedByUser")
+  closedPayrollPeriods          PayrollPeriod[]         @relation("PayrollPeriodClosedByUser")
+  createdPayrollPeriodSnapshots PayrollPeriodSnapshot[] @relation("PayrollPeriodSnapshotCreatedByUser")
+  payrollAuditEvents            PayrollAuditEvent[]     @relation("PayrollAuditEventActorUser")
 
   @@index([role])
   @@index([dataScope])
   @@index([isActive])
 }
 
+/// Enterprise audit log for admin actions (RBAC/security traceability).
+model AuditLog {
+  id          String          @id @default(cuid())
+  actorUserId String
+  actorRole   UserRole
+  action      AuditAction
+  targetType  AuditTargetType
+  targetId    String?
+
+  endpoint  String? @db.VarChar(200)
+  method    String? @db.VarChar(16)
+  sourceIp  String? @db.VarChar(64)
+  userAgent String? @db.VarChar(200)
+
+  details   Json?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  actor User @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([actorUserId])
+  @@index([action])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+}
+
 model Company {
   id   String @id @default(cuid())
   name String @db.VarChar(200)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   policy                 CompanyPolicy?
   policyRuleSets         PolicyRuleSet[]
@@ -164,13 +461,22 @@ model Company {
   doors    Door[]
   devices  Device[]
 
-  deviceInboxEvents DeviceInboxEvent[] @relation("CompanyDeviceInboxEvents")
-  weeklyShiftPlans  WeeklyShiftPlan[]
-  employeeLeaves    EmployeeLeave[]
-  shiftTemplates    ShiftTemplate[]
+  deviceInboxEvents         DeviceInboxEvent[]         @relation("CompanyDeviceInboxEvents")
+  weeklyShiftPlans          WeeklyShiftPlan[]
+  employeeLeaves            EmployeeLeave[]
+  attendanceOwnershipAudits AttendanceOwnershipAudit[]
+  dailyAttendanceReviewLogs DailyAttendanceReviewLog[]
+
+  shiftTemplates     ShiftTemplate[]
+  breakPlans         BreakPlan[]
+  shiftImportAliases ShiftImportAlias[]
 
   employeeEmploymentPeriods EmployeeEmploymentPeriod[]
   employeeActions           EmployeeAction[]
+  employeeProfileVersions   EmployeeProfileVersion[]
+  employeeOrgAssignments    EmployeeOrgAssignment[]
+  employeeImportRuns        EmployeeImportRun[]
+  employeeImportApplyLocks  EmployeeImportApplyLock[]
 
   importProfiles                  CompanyImportProfile[]
   integrationLogs                 IntegrationLog[]
@@ -181,9 +487,235 @@ model Company {
   employeeGroups                  EmployeeGroup[]
   employeeSubgroups               EmployeeSubgroup[]
 
-  workSchedulePatterns    WorkSchedulePattern[]
-  workScheduleAssignments WorkScheduleAssignment[]
-  workSchedulePatternDays WorkSchedulePatternDay[]
+  workSchedulePatterns        WorkSchedulePattern[]
+  workScheduleAssignments     WorkScheduleAssignment[]
+  workSchedulePatternDays     WorkSchedulePatternDay[]
+  payrollPeriods              PayrollPeriod[]
+  payrollPeriodSnapshots      PayrollPeriodSnapshot[]
+  payrollAuditEvents          PayrollAuditEvent[]
+  payrollCodeMappingProfiles  PayrollCodeMappingProfile[]
+  screenConfigurationProfiles ScreenConfigurationProfile[]
+  homeQuickAccessProfile      HomeQuickAccessProfile?
+}
+
+model PayrollPeriod {
+  id        String              @id @default(cuid())
+  companyId String
+  month     String              @db.VarChar(7)
+  status    PayrollPeriodStatus @default(OPEN)
+
+  preClosedAt       DateTime? @db.Timestamptz(3)
+  preClosedByUserId String?
+
+  closedAt       DateTime? @db.Timestamptz(3)
+  closedByUserId String?
+
+  note      String?  @db.Text
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  company         Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  preClosedByUser User?                   @relation("PayrollPeriodPreClosedByUser", fields: [preClosedByUserId], references: [id], onDelete: SetNull)
+  closedByUser    User?                   @relation("PayrollPeriodClosedByUser", fields: [closedByUserId], references: [id], onDelete: SetNull)
+  snapshots       PayrollPeriodSnapshot[]
+
+  @@unique([companyId, month])
+  @@index([companyId, status])
+  @@index([companyId, month, status])
+  @@index([preClosedByUserId])
+  @@index([closedByUserId])
+}
+
+model PayrollPeriodSnapshot {
+  id        String @id @default(cuid())
+  companyId String
+  periodId  String
+  month     String @db.VarChar(7)
+
+  status PayrollSnapshotStatus @default(DRAFT)
+
+  payrollMappingProfile String  @db.VarChar(50)
+  dailyExportProfile    String? @db.VarChar(50)
+  monthlyExportProfile  String? @db.VarChar(50)
+
+  employeeCount          Int @default(0)
+  payrollReadyCount      Int @default(0)
+  blockedEmployeeCount   Int @default(0)
+  blockedDayCount        Int @default(0)
+  reviewRequiredDayCount Int @default(0)
+  pendingReviewDayCount  Int @default(0)
+  rejectedReviewDayCount Int @default(0)
+
+  createdByUserId String?
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  period        PayrollPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  createdByUser User?         @relation("PayrollPeriodSnapshotCreatedByUser", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  employeeRows PayrollPeriodSnapshotEmployee[]
+  codeRows     PayrollPeriodSnapshotCodeRow[]
+
+  @@index([companyId, month])
+  @@index([periodId, createdAt])
+  @@index([createdByUserId])
+}
+
+model PayrollPeriodSnapshotEmployee {
+  id         String @id @default(cuid())
+  snapshotId String
+
+  employeeId   String
+  employeeCode String @db.VarChar(100)
+  fullName     String @db.VarChar(200)
+  month        String @db.VarChar(7)
+
+  dayCount Int @default(0)
+
+  presentDays Int @default(0)
+  absentDays  Int @default(0)
+  offDays     Int @default(0)
+  leaveDays   Int @default(0)
+
+  annualLeaveDays  Int @default(0)
+  sickLeaveDays    Int @default(0)
+  excusedLeaveDays Int @default(0)
+  unpaidLeaveDays  Int @default(0)
+  unknownLeaveDays Int @default(0)
+
+  workedMinutes        Int @default(0)
+  overtimeMinutes      Int @default(0)
+  overtimeEarlyMinutes Int @default(0)
+  overtimeLateMinutes  Int @default(0)
+  lateMinutes          Int @default(0)
+  earlyLeaveMinutes    Int @default(0)
+
+  blockedDays Int @default(0)
+  readyDays   Int @default(0)
+
+  reviewRequiredDays Int @default(0)
+  pendingReviewDays  Int @default(0)
+  rejectedReviewDays Int @default(0)
+
+  manualAdjustmentDays Int @default(0)
+  anomalyDays          Int @default(0)
+
+  puantajCodes Json?
+
+  isPayrollReady Boolean @default(false)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  snapshot PayrollPeriodSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  @@index([snapshotId])
+  @@index([snapshotId, employeeId])
+  @@index([snapshotId, employeeCode])
+}
+
+model PayrollPeriodSnapshotCodeRow {
+  id         String @id @default(cuid())
+  snapshotId String
+
+  employeeId   String
+  employeeCode String @db.VarChar(100)
+  fullName     String @db.VarChar(200)
+  month        String @db.VarChar(7)
+
+  puantajCode      String                             @db.VarChar(50)
+  payrollCode      String                             @db.VarChar(50)
+  payrollLabel     String                             @db.VarChar(200)
+  unit             PayrollSnapshotQuantityUnit
+  quantityStrategy PayrollCodeMappingQuantityStrategy
+  fixedQuantity    Decimal?                           @db.Decimal(12, 2)
+
+  quantity     Decimal @db.Decimal(12, 2)
+  dayCount     Int     @default(0)
+  totalMinutes Int     @default(0)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  snapshot PayrollPeriodSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  @@index([snapshotId])
+  @@index([snapshotId, employeeId])
+  @@index([snapshotId, payrollCode])
+  @@index([snapshotId, puantajCode])
+}
+
+model PayrollAuditEvent {
+  id        String  @id @default(cuid())
+  companyId String
+  month     String? @db.VarChar(7)
+
+  employeeId String? @db.VarChar(100)
+
+  eventType  PayrollAuditEventType
+  entityType PayrollAuditEntityType
+  entityId   String                 @db.VarChar(100)
+
+  actorUserId String?
+  payload     Json?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  actorUser User?   @relation("PayrollAuditEventActorUser", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, createdAt])
+  @@index([companyId, month, createdAt])
+  @@index([companyId, eventType, createdAt])
+  @@index([companyId, entityType, entityId, createdAt])
+  @@index([companyId, employeeId, createdAt])
+  @@index([actorUserId])
+}
+
+model PayrollCodeMappingProfile {
+  id        String @id @default(cuid())
+  companyId String
+
+  code String @db.VarChar(50)
+  name String @db.VarChar(200)
+
+  isDefault Boolean @default(false)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  company Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  items   PayrollCodeMappingItem[]
+
+  @@unique([companyId, code])
+  @@index([companyId, isDefault])
+  @@index([companyId, isActive])
+  @@index([companyId, createdAt])
+}
+
+model PayrollCodeMappingItem {
+  id        String @id @default(cuid())
+  profileId String
+
+  puantajCode      String                             @db.VarChar(50)
+  payrollCode      String                             @db.VarChar(50)
+  payrollLabel     String                             @db.VarChar(200)
+  unit             PayrollCodeMappingItemUnit
+  quantityStrategy PayrollCodeMappingQuantityStrategy
+  fixedQuantity    Decimal?                           @db.Decimal(12, 2)
+
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  profile PayrollCodeMappingProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, puantajCode])
+  @@index([profileId, isActive, sortOrder])
+  @@index([profileId, payrollCode])
+  @@index([profileId, puantajCode, isActive])
 }
 
 /// Security/audit log for blocked integration attempts (IP, auth, config).
@@ -194,7 +726,7 @@ model IntegrationSecurityLog {
   endpoint   String   @db.VarChar(200)
   sourceIp   String?  @db.VarChar(64)
   userAgent  String?  @db.VarChar(200)
-  receivedAt DateTime @default(now())
+  receivedAt DateTime @default(now()) @db.Timestamptz(3)
 
   details Json?
 
@@ -214,9 +746,9 @@ model IntegrationEmployeeLink {
 
   employeeId String
 
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  lastSeenAt DateTime?
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @db.Timestamptz(3)
+  lastSeenAt DateTime? @db.Timestamptz(3)
 
   /// Optional: helps detect unchanged payloads without diffing full objects.
   lastPayloadHash String? @db.VarChar(64)
@@ -244,8 +776,8 @@ model IntegrationLog {
   /// Never store the API key itself. Store a hash/fingerprint for traceability.
   apiKeyHash String? @db.VarChar(64)
 
-  receivedAt  DateTime  @default(now())
-  processedAt DateTime?
+  receivedAt  DateTime  @default(now()) @db.Timestamptz(3)
+  processedAt DateTime? @db.Timestamptz(3)
 
   totalCount     Int @default(0)
   createdCount   Int @default(0)
@@ -274,9 +806,9 @@ model IntegrationLeaveLink {
   employeeId String
   leaveId    String
 
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  lastSeenAt DateTime?
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @db.Timestamptz(3)
+  lastSeenAt DateTime? @db.Timestamptz(3)
 
   lastPayloadHash String? @db.VarChar(64)
 
@@ -299,9 +831,9 @@ model IntegrationWeeklyShiftPlanLink {
   employeeId        String
   weeklyShiftPlanId String
 
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  lastSeenAt DateTime?
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @db.Timestamptz(3)
+  lastSeenAt DateTime? @db.Timestamptz(3)
 
   lastPayloadHash String? @db.VarChar(64)
 
@@ -316,8 +848,8 @@ model IntegrationWeeklyShiftPlanLink {
 
 model CompanyImportProfile {
   id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   companyId String
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -327,6 +859,65 @@ model CompanyImportProfile {
 
   @@unique([companyId, kind])
   @@index([companyId])
+}
+
+model ScreenConfigurationProfile {
+  id        String                       @id @default(cuid())
+  companyId String
+  screenKey ScreenConfigurationScreenKey
+  createdAt DateTime                     @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime                     @updatedAt @db.Timestamptz(3)
+
+  company Company                    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  fields  ScreenConfigurationField[]
+
+  @@unique([companyId, screenKey])
+  @@index([companyId])
+  @@index([screenKey])
+}
+
+model ScreenConfigurationField {
+  id        String                      @id @default(cuid())
+  profileId String
+  fieldKey  ScreenConfigurationFieldKey
+  isVisible Boolean                     @default(true)
+  createdAt DateTime                    @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime                    @updatedAt @db.Timestamptz(3)
+
+  profile ScreenConfigurationProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, fieldKey])
+  @@index([profileId])
+  @@index([fieldKey])
+}
+
+model HomeQuickAccessProfile {
+  id        String   @id @default(cuid())
+  companyId String   @unique
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  company Company                      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  cards   HomeQuickAccessCardSetting[]
+
+  @@index([companyId])
+}
+
+model HomeQuickAccessCardSetting {
+  id        String   @id @default(cuid())
+  profileId String
+  cardId    String   @db.VarChar(64)
+  sortOrder Int
+  isVisible Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  profile HomeQuickAccessProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, cardId])
+  @@unique([profileId, sortOrder])
+  @@index([profileId])
+  @@index([cardId])
 }
 
 model CompanyPolicy {
@@ -375,11 +966,32 @@ model CompanyPolicy {
   /// Enterprise: Overtime dynamic break.
   /// Example: every 180 minutes of overtime => 30 minutes break deducted from payable overtime.
   /// If either value is null, the feature is disabled.
-  otBreakInterval Int?
-  otBreakDuration Int?
+  ///
+  /// Ownership engine controls:
+  /// - attendanceOwnershipMode:
+  ///     WINDOW = eski gün/pencere bazlı davranış
+  ///     INSTANCE_SCORING = vardiya instance adayları arasında skorlayarak sahiplik verir
+  /// - minimumRestMinutes:
+  ///     yeni başlangıç değerlendirmesinde dinlenme kuralı
+  /// - ownershipEarlyInMinutes:
+  ///     vardiya başlangıcından ne kadar erken IN aday kabul edilir
+  /// - ownershipLateOutMinutes:
+  ///     vardiya bitişinden ne kadar geç OUT aday kabul edilir
+  /// - ownershipNextShiftLookaheadMinutes:
+  ///     sonraki vardiya instance adayını ne kadar ileriye kadar dikkate alalım
+  /// - unscheduledWorkBehavior:
+  ///     plan dışı geçerli çalışmanın motor davranışı
+  attendanceOwnershipMode            AttendanceOwnershipMode @default(INSTANCE_SCORING)
+  minimumRestMinutes                 Int                     @default(660)
+  ownershipEarlyInMinutes            Int                     @default(180)
+  ownershipLateOutMinutes            Int                     @default(120)
+  ownershipNextShiftLookaheadMinutes Int                     @default(480)
+  unscheduledWorkBehavior            UnscheduledWorkBehavior @default(FLAG_ONLY)
+  otBreakInterval                    Int?
+  otBreakDuration                    Int?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 }
@@ -393,13 +1005,14 @@ model EmployeeGroup {
   code String @db.VarChar(50)
   name String @db.VarChar(120)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   subgroups              EmployeeSubgroup[]
   employees              Employee[]
+  employeeOrgAssignments EmployeeOrgAssignment[]
   policyAssignments      PolicyAssignment[]
   shiftPolicyAssignments ShiftPolicyAssignment[]
 
@@ -420,13 +1033,14 @@ model EmployeeSubgroup {
   code String @db.VarChar(50)
   name String @db.VarChar(120)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   company Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
   group   EmployeeGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   employees              Employee[]
+  employeeOrgAssignments EmployeeOrgAssignment[]
   policyAssignments      PolicyAssignment[]
   shiftPolicyAssignments ShiftPolicyAssignment[]
 
@@ -460,8 +1074,8 @@ model WorkSchedulePattern {
 
   isActive Boolean @default(true)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -483,8 +1097,8 @@ model WorkSchedulePatternDay {
   dayIndex        Int
   shiftTemplateId String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   company       Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
   pattern       WorkSchedulePattern @relation(fields: [patternId], references: [id], onDelete: Cascade)
@@ -517,8 +1131,8 @@ model WorkScheduleAssignment {
   employeeGroupId    String?
   branchId           String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   company Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
   pattern WorkSchedulePattern @relation(fields: [patternId], references: [id], onDelete: Cascade)
@@ -550,8 +1164,6 @@ model PolicyRuleSet {
   name String @db.VarChar(120)
 
   /// Rule fields (timezone stays company-level; this is evaluation rules only)
-  shiftStartMinute       Int
-  shiftEndMinute         Int
   breakMinutes           Int
   lateGraceMinutes       Int
   earlyLeaveGraceMinutes Int
@@ -572,8 +1184,16 @@ model PolicyRuleSet {
   otBreakInterval       Int?
   otBreakDuration       Int?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  /// Ownership engine behavior (rule layer)
+  attendanceOwnershipMode            AttendanceOwnershipMode
+  minimumRestMinutes                 Int
+  ownershipEarlyInMinutes            Int
+  ownershipLateOutMinutes            Int
+  ownershipNextShiftLookaheadMinutes Int
+  unscheduledWorkBehavior            UnscheduledWorkBehavior
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   company                Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
   assignments            PolicyAssignment[]
@@ -605,8 +1225,8 @@ model PolicyAssignment {
   /// Higher wins if multiple match (future-proof).
   priority Int @default(100)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
   employee         Employee?         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
@@ -647,8 +1267,8 @@ model ShiftPolicyAssignment {
   /// Higher wins if multiple match.
   priority Int @default(100)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
   employee         Employee?         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
@@ -688,8 +1308,8 @@ model EmployeeLeave {
   type LeaveType
   note String?   @db.Text
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   company               Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
   employee              Employee               @relation(fields: [employeeId], references: [id], onDelete: Cascade)
@@ -749,8 +1369,8 @@ model DailyAdjustment {
 
   note String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
@@ -769,6 +1389,9 @@ model Employee {
   firstName    String  @db.VarChar(100)
   lastName     String  @db.VarChar(100)
   email        String? @db.VarChar(320)
+  nationalId   String? @db.VarChar(11)
+  phone        String? @db.VarChar(30)
+  gender       String? @db.VarChar(20)
 
   cardNo       String? @db.VarChar(100)
   deviceUserId String? @db.VarChar(100)
@@ -786,8 +1409,8 @@ model Employee {
   hiredAt      DateTime?
   terminatedAt DateTime?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
   rawEvents        RawEvent[]
@@ -798,8 +1421,11 @@ model Employee {
   resolvedDeviceInboxEvents       DeviceInboxEvent[]               @relation("EmployeeResolvedDeviceInboxEvents")
   weeklyShiftPlans                WeeklyShiftPlan[]
   employeeLeaves                  EmployeeLeave[]
+  attendanceOwnershipAudits       AttendanceOwnershipAudit[]
   employmentPeriods               EmployeeEmploymentPeriod[]
   employeeActions                 EmployeeAction[]
+  employeeProfileVersions         EmployeeProfileVersion[]
+  employeeOrgAssignments          EmployeeOrgAssignment[]
   integrationEmployeeLinks        IntegrationEmployeeLink[]
   integrationLeaveLinks           IntegrationLeaveLink[]
   integrationWeeklyShiftPlanLinks IntegrationWeeklyShiftPlanLink[]
@@ -815,6 +1441,66 @@ model Employee {
   @@index([isActive])
   @@index([companyId, cardNo])
   @@index([companyId, deviceUserId])
+  @@index([companyId, nationalId])
+  @@index([companyId, phone])
+  @@index([companyId, branchId])
+  @@index([companyId, employeeGroupId])
+  @@index([companyId, employeeSubgroupId])
+}
+
+model EmployeeProfileVersion {
+  id         String @id @default(cuid())
+  companyId  String
+  employeeId String
+
+  validFrom DateTime  @db.Date
+  validTo   DateTime? @db.Date
+
+  employeeCode String  @db.VarChar(50)
+  cardNo       String? @db.VarChar(100)
+  firstName    String  @db.VarChar(100)
+  lastName     String  @db.VarChar(100)
+  email        String? @db.VarChar(320)
+  nationalId   String? @db.VarChar(11)
+  phone        String? @db.VarChar(30)
+  gender       String? @db.VarChar(20)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, employeeId])
+  @@index([employeeId, validFrom])
+  @@index([companyId, validFrom])
+}
+
+model EmployeeOrgAssignment {
+  id         String @id @default(cuid())
+  companyId  String
+  employeeId String
+
+  validFrom DateTime  @db.Date
+  validTo   DateTime? @db.Date
+
+  branchId           String?
+  employeeGroupId    String?
+  employeeSubgroupId String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  branch           Branch?           @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  employeeGroup    EmployeeGroup?    @relation(fields: [employeeGroupId], references: [id], onDelete: SetNull)
+  employeeSubgroup EmployeeSubgroup? @relation(fields: [employeeSubgroupId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, employeeId])
+  @@index([employeeId, validFrom])
+  @@index([companyId, validFrom])
   @@index([companyId, branchId])
   @@index([companyId, employeeGroupId])
   @@index([companyId, employeeSubgroupId])
@@ -834,8 +1520,8 @@ model EmployeeEmploymentPeriod {
   /// Optional HR reason / note (e.g., termination reason)
   reason String? @db.VarChar(200)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
@@ -858,7 +1544,7 @@ model EmployeeAction {
   actorUserId String? @db.VarChar(64)
   details     Json?
 
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
 
   company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
@@ -884,11 +1570,11 @@ model RawEvent {
   /// Optional scenario note (e.g. MISSING_PUNCH_IN)
   note    String? @db.VarChar(200)
 
-  occurredAt DateTime
+  occurredAt DateTime       @db.Timestamptz(3)
   direction  EventDirection
   source     EventSource    @default(MANUAL)
 
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
 
   company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
@@ -896,7 +1582,8 @@ model RawEvent {
   door   Door?   @relation(fields: [doorId], references: [id], onDelete: SetNull)
   device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
 
-  normalized NormalizedEvent?
+  normalized                NormalizedEvent?
+  attendanceOwnershipAudits AttendanceOwnershipAudit[]
 
   @@unique([companyId, externalRef])
   @@index([companyId, batchId])
@@ -911,12 +1598,12 @@ model NormalizedEvent {
   companyId  String
   employeeId String
 
-  occurredAt   DateTime
+  occurredAt   DateTime         @db.Timestamptz(3)
   direction    EventDirection
   status       NormalizedStatus @default(PENDING)
   rejectReason String?
 
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
 
   rawEvent RawEvent @relation(fields: [rawEventId], references: [id], onDelete: Cascade)
   company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -932,21 +1619,33 @@ model DailyAttendance {
   employeeId String
   workDate   DateTime @db.Date
 
-  firstIn DateTime?
-  lastOut DateTime?
+  firstIn DateTime? @db.Timestamptz(3)
+  lastOut DateTime? @db.Timestamptz(3)
 
-  workedMinutes        Int @default(0)
-  overtimeMinutes      Int @default(0)
-  overtimeEarlyMinutes Int @default(0)
-  overtimeLateMinutes  Int @default(0)
+  workedMinutes              Int                        @default(0)
+  scheduledWorkedMinutes     Int                        @default(0)
+  unscheduledWorkedMinutes   Int                        @default(0)
+  overtimeMinutes            Int                        @default(0)
+  scheduledOvertimeMinutes   Int                        @default(0)
+  unscheduledOvertimeMinutes Int                        @default(0)
+  overtimeEarlyMinutes       Int                        @default(0)
+  overtimeLateMinutes        Int                        @default(0)
   /// Enterprise: OT Dynamic Break meta (engine output)
-  otBreakCount         Int @default(0)
-  otBreakDeductMinutes Int @default(0)
-  lateMinutes          Int @default(0)
-  earlyLeaveMinutes    Int @default(0)
+  otBreakCount               Int                        @default(0)
+  otBreakDeductMinutes       Int                        @default(0)
+  requiresReview             Boolean                    @default(false)
+  reviewReasons              String[]                   @default([])
+  reviewStatus               AttendanceReviewStatus     @default(NONE)
+  reviewedAt                 DateTime?                  @db.Timestamptz(3)
+  reviewedByUserId           String?
+  reviewNote                 String?
+  reviewLogs                 DailyAttendanceReviewLog[]
+  lateMinutes                Int                        @default(0)
+  earlyLeaveMinutes          Int                        @default(0)
 
-  status    DailyStatus @default(ABSENT)
-  anomalies String[]    @default([])
+  status      DailyStatus @default(ABSENT)
+  anomalies   String[]    @default([])
+  anomalyMeta Json?
 
   // Shift meta (engine output, SINGLE SOURCE OF TRUTH for UI/debug)
   shiftSource        String?  @db.VarChar(20) // POLICY | WEEK_TEMPLATE | DAY_TEMPLATE | CUSTOM
@@ -955,7 +1654,7 @@ model DailyAttendance {
   shiftEndMinute     Int?
   shiftSpansMidnight Boolean?
 
-  computedAt DateTime @default(now())
+  computedAt DateTime @default(now()) @db.Timestamptz(3)
 
   company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
@@ -963,6 +1662,62 @@ model DailyAttendance {
   @@unique([companyId, employeeId, workDate])
   @@index([companyId, workDate])
   @@index([employeeId, workDate])
+}
+
+model DailyAttendanceReviewLog {
+  id                String @id @default(cuid())
+  companyId         String
+  dailyAttendanceId String
+
+  fromStatus    AttendanceReviewStatus?
+  toStatus      AttendanceReviewStatus
+  actedByUserId String?
+  note          String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  company         Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  dailyAttendance DailyAttendance @relation(fields: [dailyAttendanceId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, dailyAttendanceId, createdAt])
+  @@index([companyId, createdAt])
+}
+
+model AttendanceOwnershipAudit {
+  id String @id @default(cuid())
+
+  companyId  String
+  employeeId String
+  rawEventId String
+
+  /// The DailyAttendance logical day being recomputed.
+  logicalDayKey String
+
+  occurredAt DateTime       @db.Timestamptz(3)
+  direction  EventDirection
+
+  ownerLogicalDayKey String?
+  ownerSource        AttendanceOwnershipAuditOwnerSource?
+  ownershipScore     Int?
+  ownershipBreakdown Json?
+
+  disposition AttendanceOwnershipAuditDisposition
+  note        String?
+
+  shiftSource    String?
+  shiftSignature String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  rawEvent RawEvent @relation(fields: [rawEventId], references: [id], onDelete: Cascade)
+
+  @@unique([rawEventId, logicalDayKey])
+  @@index([companyId, logicalDayKey])
+  @@index([companyId, employeeId, logicalDayKey])
+  @@index([companyId, rawEventId])
 }
 
 model Branch {
@@ -973,13 +1728,14 @@ model Branch {
   name     String  @db.VarChar(200)
   isActive Boolean @default(true)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  doors     Door[]
-  devices   Device[]
-  employees Employee[]
+  company                Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  doors                  Door[]
+  devices                Device[]
+  employees              Employee[]
+  employeeOrgAssignments EmployeeOrgAssignment[]
 
   policyAssignments      PolicyAssignment[]
   shiftPolicyAssignments ShiftPolicyAssignment[]
@@ -1002,8 +1758,8 @@ model Door {
 
   isActive Boolean @default(true)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
   branch    Branch     @relation(fields: [branchId], references: [id], onDelete: Cascade)
@@ -1033,13 +1789,13 @@ model Device {
 
   isActive Boolean @default(true)
 
-  lastSeenAt       DateTime?
-  lastSyncAt       DateTime?
-  lastErrorAt      DateTime?
+  lastSeenAt       DateTime? @db.Timestamptz(3)
+  lastSyncAt       DateTime? @db.Timestamptz(3)
+  lastErrorAt      DateTime? @db.Timestamptz(3)
   lastErrorMessage String?   @db.Text
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
   branch    Branch     @relation(fields: [branchId], references: [id], onDelete: Cascade)
@@ -1062,7 +1818,7 @@ model DeviceInboxEvent {
 
   externalRef String @db.VarChar(200)
 
-  occurredAt DateTime
+  occurredAt DateTime       @db.Timestamptz(3)
   direction  EventDirection
 
   cardNo       String? @db.VarChar(100)
@@ -1070,13 +1826,13 @@ model DeviceInboxEvent {
 
   status             DeviceInboxStatus @default(PENDING)
   resolvedEmployeeId String?
-  resolvedAt         DateTime?
-  ignoredAt          DateTime?
+  resolvedAt         DateTime?         @db.Timestamptz(3)
+  ignoredAt          DateTime?         @db.Timestamptz(3)
 
   rawPayload Json?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   company Company @relation("CompanyDeviceInboxEvents", fields: [companyId], references: [id], onDelete: Cascade)
   device  Device? @relation("DeviceDeviceInboxEvents", fields: [deviceId], references: [id], onDelete: SetNull)
@@ -1102,7 +1858,7 @@ model WeeklyShiftPlan {
   id            String   @id @default(cuid())
   companyId     String
   employeeId    String
-  weekStartDate DateTime
+  weekStartDate DateTime @db.Date
 
   // Stage 4: Shift Assignment (SAP uyumlu)
   shiftTemplateId String? // nullable for backward compatibility
@@ -1131,8 +1887,8 @@ model WeeklyShiftPlan {
   sunStartMinute Int?
   sunEndMinute   Int?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   company                         Company                          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   employee                        Employee                         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
@@ -1159,18 +1915,66 @@ model ShiftTemplate {
   shiftCode String
 
   /// Human signature (derived from times; can change when times change)
-  signature     String
-  startTime     String
-  endTime       String
-  spansMidnight Boolean
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
+  signature          String
+  startTime          String
+  endTime            String
+  spansMidnight      Boolean
+  plannedWorkMinutes Int      @default(0)
+  breakPlanId        String?
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now()) @db.Timestamptz(3)
 
   company                 Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  breakPlan               BreakPlan?               @relation(fields: [breakPlanId], references: [id], onDelete: SetNull)
   weeklyPlans             WeeklyShiftPlan[]
   workSchedulePatternDays WorkSchedulePatternDay[]
+  importAliases           ShiftImportAlias[]
 
   @@unique([companyId, shiftCode])
   @@unique([companyId, signature])
   @@index([companyId])
+  @@index([companyId, breakPlanId])
+}
+
+model BreakPlan {
+  id        String @id @default(cuid())
+  companyId String
+
+  code                String  @db.VarChar(4)
+  name                String  @db.VarChar(120)
+  plannedBreakMinutes Int
+  isPaid              Boolean @default(false)
+  isActive            Boolean @default(true)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  company        Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  shiftTemplates ShiftTemplate[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([companyId, isActive])
+}
+
+model ShiftImportAlias {
+  id String @id @default(cuid())
+
+  companyId       String
+  shiftTemplateId String
+
+  sourceValueRaw        String @db.VarChar(120)
+  normalizedSourceValue String @db.VarChar(120)
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  shiftTemplate ShiftTemplate @relation(fields: [shiftTemplateId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, normalizedSourceValue])
+  @@index([companyId])
+  @@index([companyId, shiftTemplateId])
+  @@index([companyId, isActive])
 }

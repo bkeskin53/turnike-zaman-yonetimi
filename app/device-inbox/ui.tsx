@@ -2,6 +2,37 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+function cx(...xs: Array<string | false | null | undefined>) {
+  return xs.filter(Boolean).join(" ");
+}
+
+type Tone = "neutral" | "info" | "good" | "warn" | "violet" | "danger";
+function toneStyles(tone: Tone) {
+  switch (tone) {
+    case "info":
+      return { chip: "bg-sky-50 text-sky-800 ring-sky-200/70", soft: "border-sky-200/70 bg-gradient-to-b from-white to-sky-50/40" };
+    case "good":
+      return { chip: "bg-emerald-50 text-emerald-800 ring-emerald-200/70", soft: "border-emerald-200/70 bg-gradient-to-b from-white to-emerald-50/35" };
+    case "warn":
+      return { chip: "bg-amber-50 text-amber-900 ring-amber-200/70", soft: "border-amber-200/70 bg-gradient-to-b from-white to-amber-50/45" };
+    case "violet":
+      return { chip: "bg-violet-50 text-violet-800 ring-violet-200/70", soft: "border-violet-200/70 bg-gradient-to-b from-white to-violet-50/40" };
+    case "danger":
+      return { chip: "bg-rose-50 text-rose-800 ring-rose-200/70", soft: "border-rose-200/70 bg-gradient-to-b from-white to-rose-50/40" };
+    default:
+      return { chip: "bg-zinc-100 text-zinc-700 ring-zinc-200/70", soft: "border-zinc-200/70 bg-white" };
+  }
+}
+
+function PillBadge({ tone = "neutral", children }: { tone?: Tone; children: React.ReactNode }) {
+  const t = toneStyles(tone);
+  return (
+    <span className={cx("inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-tight ring-1 ring-inset shadow-sm", t.chip)}>
+      {children}
+    </span>
+  );
+}
+
 type InboxRow = {
   id: string;
   occurredAt: string;
@@ -43,12 +74,14 @@ async function readJsonSafe(r: Response) {
   }
 }
 
-export default function DeviceInboxClient() {
+export default function DeviceInboxClient(props: { canResolve: boolean; role: string | null }) {
   const [rows, setRows] = useState<InboxRow[]>([]);
   const [employees, setEmployees] = useState<EmployeeItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
+  const [employeesDenied, setEmployeesDenied] = useState(false);
 
   // satır bazlı seçilen personel
   const [pick, setPick] = useState<Record<string, string>>({});
@@ -64,12 +97,18 @@ export default function DeviceInboxClient() {
   async function loadInbox(opts?: { keepInfo?: boolean }) {
     setLoading(true);
     setErr(null);
+    setAccessDenied(false);
     if (!opts?.keepInfo) setInfo(null);
 
     try {
       // credentials: "include" eklendi. API çağrılarında oturum çerezinin gönderilmesi için gereklidir.
       const r = await fetch("/api/device-inbox?status=PENDING&take=200", { credentials: "include" });
       const j = await readJsonSafe(r);
+      if (r.status === 403) {
+        setAccessDenied(true);
+        setRows([]);
+        return;
+      }
       if (!r.ok || !j?.ok) {
         setErr(j?.error ?? `Inbox API hata: ${r.status}`);
         setRows([]);
@@ -88,6 +127,11 @@ export default function DeviceInboxClient() {
     try {
       // credentials: "include" eklendi. Oturum çerezi olmadan 401 dönebiliyor.
       const r = await fetch("/api/employees", { credentials: "include" });
+      if (r.status === 403) {
+        setEmployeesDenied(true);
+        setEmployees([]);
+        return;
+      }
       const j = await readJsonSafe(r);
       const items = (j?.items ?? []) as EmployeeItem[];
       setEmployees(items.filter((x) => x.isActive));
@@ -112,6 +156,10 @@ export default function DeviceInboxClient() {
     setErr(null);
     setInfo(null);
     setNeedConfirm(null);
+    if (!props.canResolve) {
+      setErr("Bu işlem için yetkiniz yok. (Read-only)");
+      return;
+    }
 
     const employeeId = pick[inboxId];
     if (!employeeId) {
@@ -191,21 +239,51 @@ export default function DeviceInboxClient() {
   }
 
   return (
-    <div>
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => loadInbox()}
-          className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm hover:bg-zinc-50"
-        >
-          Yenile
-        </button>
-        <div className="text-xs text-zinc-500">
-          İpucu: Resolve ettikten sonra aynı kart artık otomatik eşleşir (Sync’te tekrar 5 görmeye başlarsın).
+    <div className="grid gap-4">
+      {/* Hero / Role badge / Permission note */}
+      <div className={cx("rounded-2xl border p-5 shadow-[0_1px_3px_rgba(0,0,0,0.05)]", toneStyles("violet").soft)}>
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="text-lg font-extrabold tracking-tight text-zinc-900">Cihaz Inbox</div>
+              <PillBadge tone="violet">DeviceInbox</PillBadge>
+              {props.role ? <PillBadge tone="neutral">{props.role}</PillBadge> : null}
+              {!props.canResolve ? <PillBadge tone="neutral">Read-only</PillBadge> : null}
+              {loading ? <PillBadge tone="warn">Yükleniyor</PillBadge> : null}
+            </div>
+            <div className="mt-1 text-sm text-zinc-600 font-medium leading-relaxed">
+              Eşleşmeyen cihaz kayıtları burada bekler. Resolve ile personel eşleştirip ham olayı Events’e aktarabilirsiniz.
+            </div>
+            <div className="mt-2 text-[11px] text-zinc-500">
+              Not: Resolve sonrası kart/user id personele bağlanırsa aynı kimlik bir daha otomatik eşleşir.
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => loadInbox()}
+              className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 shadow-sm hover:bg-zinc-50"
+            >
+              Yenile <span aria-hidden className="text-zinc-400">→</span>
+            </button>
+          </div>
+        </div>
+
+        <div className={cx("mt-4 rounded-2xl border px-4 py-3", toneStyles(props.canResolve ? "warn" : "danger").soft)}>
+          <div className="text-xs font-extrabold uppercase tracking-wider text-zinc-700">Yetki Notu</div>
+          <div className={cx("mt-1 text-sm font-semibold", props.canResolve ? "text-amber-900/90" : "text-rose-900")}>
+            {props.canResolve
+              ? "Bu ekranda Resolve işlemi, Events’e ham olay ekleyebilir ve kimlik (kart/user id) eşlemesi yapabilir."
+              : "Read-only mod: kayıtları görebilirsiniz, ancak Resolve (eşleştirme) işlemi kapalıdır."}
+          </div>
+          <div className="mt-1 text-[11px] text-zinc-600">
+            Resolve, operasyonel bir aksiyondur; yetkisiz rolde backend 403 döndürür (UI bunu teknik hata gibi göstermeyiz).
+          </div>
         </div>
       </div>
 
       {err ? (
-        <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
+        <div className={cx("rounded-2xl border px-4 py-3 text-sm", toneStyles("danger").soft)}>
           {err}
           {needConfirm ? (
             <div className="mt-2 flex items-center gap-2">
@@ -226,14 +304,34 @@ export default function DeviceInboxClient() {
         </div>
       ) : null}
 
+      {accessDenied ? (
+        <div className={cx("rounded-2xl border px-4 py-4", toneStyles("danger").soft)}>
+          <div className="flex flex-wrap items-center gap-2">
+            <PillBadge tone="danger">403</PillBadge>
+            <div className="text-sm font-extrabold text-rose-900">Bu sayfaya erişim yetkiniz yok.</div>
+          </div>
+          <div className="mt-1 text-sm text-rose-900/90">
+            Cihaz Inbox, sadece yetkili roller tarafından görüntülenebilir.
+          </div>
+        </div>
+      ) : null}
+
       {info ? (
-        <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+        <div className={cx("rounded-2xl border px-4 py-3 text-sm", toneStyles("good").soft)}>
           <div className="font-medium">İşlem sonucu</div>
           <div className="mt-1">{info}</div>
         </div>
       ) : null}
 
-      <div className="mt-3 overflow-x-auto">
+      <div className="overflow-x-auto rounded-2xl border border-zinc-200/70 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
+        {employeesDenied ? (
+          <div className={cx("mb-3 rounded-xl border px-3 py-2 text-sm", toneStyles("warn").soft)}>
+            <div className="font-semibold text-amber-900">Personel listesi yetki nedeniyle yüklenemedi.</div>
+            <div className="mt-1 text-xs text-amber-900/70">
+              Bu rolde /api/employees erişimi kapalı olabilir. Resolve için personel listesi gerekir.
+            </div>
+          </div>
+        ) : null}
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-zinc-500">
@@ -274,6 +372,8 @@ export default function DeviceInboxClient() {
                       className="w-[260px] rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
                       value={pick[x.id] ?? ""}
                       onChange={(e) => setPick((p) => ({ ...p, [x.id]: e.target.value }))}
+                      disabled={!props.canResolve || employeesDenied}
+                      title={!props.canResolve ? "Read-only: personel seçimi kapalı" : employeesDenied ? "Personel listesi yok" : "Personel seç"}
                     >
                       <option value="">— seç —</option>
                       {employeeOptions.map((o) => (
@@ -286,8 +386,9 @@ export default function DeviceInboxClient() {
                   <td className="py-3">
                     <button
                       onClick={() => resolveOne(x.id)}
-                      disabled={!pick[x.id] || resolvingId === x.id || employeeOptions.length === 0}
+                      disabled={!props.canResolve || employeesDenied || !pick[x.id] || resolvingId === x.id || employeeOptions.length === 0}
                       className="rounded-xl bg-zinc-900 px-3 py-2 text-sm text-white disabled:opacity-40"
+                      title={!props.canResolve ? "Read-only: resolve kapalı" : employeesDenied ? "Personel listesi yok" : "Resolve"}
                     >
                       {resolvingId === x.id ? "Resolving…" : "Resolve"}
                     </button>
@@ -297,7 +398,7 @@ export default function DeviceInboxClient() {
             )}
           </tbody>
         </table>
-        {employeeOptions.length === 0 ? (
+        {employeeOptions.length === 0 && !employeesDenied ? (
           <div className="mt-3 text-xs text-zinc-500">
             Not: Personel listesi çekilemedi. (/api/employees yetkisi veya hata olabilir)
           </div>

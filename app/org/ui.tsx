@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 type Branch = { id: string; code: string; name: string; isActive: boolean };
+type ActiveCompany = { id: string; name: string } | null;
 type Door = {
   id: string;
   branchId: string;
@@ -32,6 +33,42 @@ type Notice = {
   text: string;
 };
 
+type DevicePingResponse = {
+  ok?: boolean;
+  latencyMs?: number;
+  error?: string;
+};
+
+type DeviceSyncResponse = {
+  ok?: boolean;
+  inserted?: number;
+  skippedReason?: string;
+  skippedSameMinuteIn?: number;
+  skippedSameMinuteOut?: number;
+  fixedDirection?: string;
+  error?: string;
+};
+
+function cx(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(" ");
+}
+
+function RoleBadge({ role }: { role: string }) {
+  const map: Record<string, string> = {
+    SYSTEM_ADMIN: "border-indigo-200 bg-indigo-50 text-indigo-800",
+    HR_CONFIG_ADMIN: "border-violet-200 bg-violet-50 text-violet-800",
+    HR_OPERATOR: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    SUPERVISOR: "border-zinc-200 bg-zinc-50 text-zinc-700",
+    UNKNOWN: "border-zinc-200 bg-zinc-50 text-zinc-700",
+  };
+  const cls = map[role] ?? map.UNKNOWN;
+  return (
+    <span className={cx("inline-flex items-center rounded-full border px-2 py-1 text-[11px] font-semibold", cls)}>
+      {role}
+    </span>
+  );
+}
+
 function formatDateTime(v?: string | null) {
   if (!v) return "—";
   const d = new Date(v);
@@ -45,7 +82,13 @@ function formatDateTime(v?: string | null) {
   }).format(d);
 }
 
-export default function OrgClient() {
+export default function OrgClient(props: {
+  role: string;
+  canManageOrg: boolean;       // Branch/Door/Device config
+  canOperateDevices: boolean;  // Ping/Sync
+}) {
+  const { role, canManageOrg, canOperateDevices } = props;
+  const [company, setCompany] = useState<ActiveCompany>(null);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [doors, setDoors] = useState<Door[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
@@ -82,6 +125,16 @@ export default function OrgClient() {
     };
   }, [branches, doors, devices]);
 
+  const modeText = useMemo(() => {
+    if (canManageOrg) return "Yazma açık (Konfigürasyon)";
+    if (role === "HR_OPERATOR") return "Operasyon modu (Ping/Sync açık, konfig kapalı)";
+    return "Read-only";
+  }, [canManageOrg, role]);
+
+  function denyConfig() {
+    flash("info", "Bu işlem için yetkin yok. (Konfigürasyon sadece: SYSTEM_ADMIN / HR_CONFIG_ADMIN)");
+  }
+
   const branchNameById = useMemo(() => {
     const m = new Map<string, string>();
     for (const b of branches) m.set(b.id, `${b.code} • ${b.name}`);
@@ -101,11 +154,15 @@ export default function OrgClient() {
 
   async function loadAll() {
     setLoading(true);
-    const [b, d, dv] = await Promise.all([
-      fetch("/api/org/branches", { cache: "no-store" }).then((r) => r.json()),
-      fetch("/api/org/doors", { cache: "no-store" }).then((r) => r.json()),
-      fetch("/api/org/devices", { cache: "no-store" }).then((r) => r.json()),
+    const [companyRes, b, d, dv] = await Promise.all([
+      fetch("/api/company", { cache: "no-store", credentials: "include" })
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null),
+      fetch("/api/org/branches", { cache: "no-store", credentials: "include" }).then((r) => r.json()),
+      fetch("/api/org/doors", { cache: "no-store", credentials: "include" }).then((r) => r.json()),
+      fetch("/api/org/devices", { cache: "no-store", credentials: "include" }).then((r) => r.json()),
     ]);
+    setCompany(companyRes?.company ? { id: companyRes.company.id, name: companyRes.company.name } : null);
     setBranches(b);
     setDoors(d);
     setDevices(dv);
@@ -115,6 +172,17 @@ export default function OrgClient() {
   useEffect(() => {
     loadAll();
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash.replace(/^#/, "").trim();
+    if (!hash) return;
+    const target = document.getElementById(hash);
+    if (!target) return;
+    window.requestAnimationFrame(() => {
+      target.scrollIntoView({ block: "center" });
+    });
+  }, [branches, devices]);
 
   const defaultBranchId = branches[0]?.id ?? null;
 
@@ -166,8 +234,41 @@ export default function OrgClient() {
 
   return (
     <div className="grid gap-4 min-w-0 w-full max-w-full overflow-x-hidden">
+      {/* MODE STRIP */}
+      <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold">Lokasyon Yapısı</div>
+            <div className="mt-1 text-xs text-zinc-500">{modeText}</div>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+              <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-1 font-semibold text-sky-900">
+                Şirket: {company?.name?.trim() || "—"}
+              </span>
+              <span className="text-zinc-500">
+                Şubeler ve lokasyonlar bu aktif şirkete bağlı alt organizasyon kayıtlarıdır.
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <RoleBadge role={role} />
+            {!canManageOrg ? (
+              <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-900">
+                Konfigürasyon kapalı
+              </span>
+            ) : null}
+          </div>
+        </div>
+      </div>
       {/* SUMMARY */}
-      <div className="grid gap-3 md:grid-cols-3 min-w-0">
+      <div className="grid gap-3 md:grid-cols-4 min-w-0">
+        <div className="rounded-2xl border border-sky-200 bg-sky-50/60 p-4 min-w-0">
+          <div className="text-xs text-sky-700">Şirket</div>
+          <div className="mt-1 truncate text-xl font-semibold text-sky-950" title={company?.name ?? ""}>
+            {company?.name?.trim() || "—"}
+          </div>
+          <div className="mt-1 text-xs text-sky-700">Aktif organizasyon üst kaydı</div>
+        </div>
+
         <div className="rounded-2xl border border-zinc-200 bg-white p-4 min-w-0">
           <div className="text-xs text-zinc-500">Şubeler</div>
           <div className="mt-1 flex items-end justify-between gap-3">
@@ -217,11 +318,18 @@ export default function OrgClient() {
       {/* BRANCHES */}
       <div className="rounded-2xl border border-zinc-200 bg-white p-4 min-w-0">
         <div className="text-sm font-semibold">Şubeler</div>
-        <div className="mt-1 text-xs text-zinc-500">Branch tanımları</div>
+        <div className="mt-1 text-xs text-zinc-500">
+          Lokasyon / şube tanımları. Her kayıt aktif şirkete bağlı alt organizasyon birimi olarak açılır.
+        </div>
+
+        <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50/70 px-3 py-2 text-xs text-sky-900">
+          <span className="font-semibold">Bağlı Şirket:</span> {company?.name?.trim() || "—"}
+        </div>
 
         <div className="mt-3 flex flex-wrap gap-2">
           <button
             onClick={async () => {
+              if (!canManageOrg) return denyConfig();
               const code = prompt("Şube Kodu (örn: MERKEZ)")?.trim();
               if (!code) return;
               const name = prompt("Şube Adı (örn: Merkez Ofis)")?.trim();
@@ -235,7 +343,12 @@ export default function OrgClient() {
 
               await loadAll();
             }}
-            className="rounded-xl bg-zinc-900 px-3 py-2 text-sm text-white hover:bg-zinc-800"
+            disabled={!canManageOrg || loading}
+            title={!canManageOrg ? "Konfigürasyon yetkisi yok" : "Yeni şube ekle"}
+            className={cx(
+              "rounded-xl px-3 py-2 text-sm text-white",
+              !canManageOrg || loading ? "bg-zinc-400 cursor-not-allowed" : "bg-zinc-900 hover:bg-zinc-800"
+            )}
           >
             + Şube Ekle
           </button>
@@ -243,6 +356,7 @@ export default function OrgClient() {
           <button
             onClick={loadAll}
             className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm hover:bg-zinc-50"
+            disabled={loading}
           >
             Yenile
           </button>
@@ -272,7 +386,7 @@ export default function OrgClient() {
                 </tr>
               ) : (
                 branches.map((x) => (
-                  <tr key={x.id} className="border-b border-zinc-100">
+                  <tr id={`branch-${x.id}`} key={x.id} className="border-b border-zinc-100 scroll-mt-28">
                     <td className="py-3 font-medium">{x.code}</td>
                     <td className="py-3">{x.name}</td>
                     <td className="py-3">{x.isActive ? "Evet" : "Hayır"}</td>
@@ -294,6 +408,7 @@ export default function OrgClient() {
         <div className="mt-3 flex flex-wrap gap-2">
           <button
             onClick={async () => {
+              if (!canManageOrg) return denyConfig();
               if (!defaultBranchId) return alert("Önce şube ekleyin.");
 
               const code = prompt("Kapı Kodu (örn: BINA_GIRIS)")?.trim();
@@ -317,7 +432,12 @@ export default function OrgClient() {
 
               await loadAll();
             }}
-            className="rounded-xl bg-zinc-900 px-3 py-2 text-sm text-white hover:bg-zinc-800"
+            disabled={!canManageOrg || loading}
+            title={!canManageOrg ? "Konfigürasyon yetkisi yok" : "Yeni kapı ekle"}
+            className={cx(
+              "rounded-xl px-3 py-2 text-sm text-white",
+              !canManageOrg || loading ? "bg-zinc-400 cursor-not-allowed" : "bg-zinc-900 hover:bg-zinc-800"
+            )}
           >
             + Kapı Ekle
           </button>
@@ -381,7 +501,10 @@ export default function OrgClient() {
                       <select
                         className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs"
                         value={x.defaultDirection ?? ""}
+                        disabled={!canManageOrg || loading}
+                        title={!canManageOrg ? "Konfigürasyon yetkisi yok" : "Varsayılan yön seç"}
                         onChange={async (e) => {
+                          if (!canManageOrg) return denyConfig();
                           const defaultDirection = e.target.value || null;
 
                           const r = await fetch(`/api/org/doors/${encodeURIComponent(x.id)}`, {
@@ -415,6 +538,8 @@ export default function OrgClient() {
                         }
                         title={x.isActive ? "Kapıyı pasif yap" : "Kapıyı aktif yap"}
                         onClick={async () => {
+                          if (!canManageOrg) return denyConfig();
+
                           const next = !x.isActive;
                           const ok = confirm(
                             next
@@ -518,6 +643,7 @@ export default function OrgClient() {
         <div className="mt-3 flex flex-wrap gap-2">
           <button
             onClick={async () => {
+              if (!canManageOrg) return denyConfig();
               if (!defaultBranchId) return alert("Önce şube ekleyin.");
 
               const name = prompt("Cihaz Adı (örn: ZK-01)")?.trim();
@@ -538,7 +664,12 @@ export default function OrgClient() {
 
               await loadAll();
             }}
-            className="rounded-xl bg-zinc-900 px-3 py-2 text-sm text-white hover:bg-zinc-800"
+            disabled={!canManageOrg || loading}
+            title={!canManageOrg ? "Konfigürasyon yetkisi yok" : "Yeni cihaz ekle"}
+            className={cx(
+              "rounded-xl px-3 py-2 text-sm text-white",
+              !canManageOrg || loading ? "bg-zinc-400 cursor-not-allowed" : "bg-zinc-900 hover:bg-zinc-800"
+            )}
           >
             + Cihaz Ekle
           </button>
@@ -593,7 +724,7 @@ export default function OrgClient() {
                         : "";
 
                   return (
-                    <tr key={x.id} className={"border-b border-zinc-100 " + rowTone}>
+                    <tr id={`device-${x.id}`} key={x.id} className={"border-b border-zinc-100 scroll-mt-28 " + rowTone}>
                     <td className="py-3 px-3 whitespace-nowrap">
                       {status === "OK" ? (
                         showOkStatusBadge ? (
@@ -627,7 +758,10 @@ export default function OrgClient() {
                       <select
                           className="w-full rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs"
                         value={x.doorId ?? ""}
+                        disabled={!canManageOrg || isBusy || loading}
+                        title={!canManageOrg ? "Konfigürasyon yetkisi yok" : "Cihaza kapı ata"}
                         onChange={async (e) => {
+                          if (!canManageOrg) return denyConfig();
                           const doorId = e.target.value || null;
 
                           const r = await fetch(`/api/org/devices/${encodeURIComponent(x.id)}`, {
@@ -680,8 +814,10 @@ export default function OrgClient() {
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                         <button
                           className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs hover:bg-zinc-50"
-                          disabled={isBusy}
+                          disabled={isBusy || loading || !canOperateDevices}
+                          title={!canOperateDevices ? "Operasyon yetkisi yok" : "Cihaz ping"}
                           onClick={async () => {
+                            if (!canOperateDevices) return flash("info", "Ping yetkin yok.");
                             setBusyDeviceId(x.id);
                             try {
                               const r = await fetch("/api/devices/ping", {
@@ -689,7 +825,7 @@ export default function OrgClient() {
                                 headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify({ deviceId: x.id }),
                               });
-                              const j = await r.json().catch(() => ({} as any));
+                              const j: DevicePingResponse = await r.json().catch(() => ({}));
 
                               if (!r.ok || !j?.ok) {
                                 flash("error", `Ping başarısız${j?.error ? ` • ${j.error}` : ""}`);
@@ -709,8 +845,10 @@ export default function OrgClient() {
 
                         <button
                           className="rounded-lg bg-zinc-900 px-2 py-1 text-xs text-white hover:bg-zinc-800"
-                          disabled={isBusy}
+                          disabled={isBusy || loading || !canOperateDevices}
+                          title={!canOperateDevices ? "Operasyon yetkisi yok" : "Cihaz sync"}
                           onClick={async () => {
+                            if (!canOperateDevices) return flash("info", "Sync yetkin yok.");
                             setBusyDeviceId(x.id);
                             try {
                               const r = await fetch("/api/devices/sync", {
@@ -719,7 +857,7 @@ export default function OrgClient() {
                                 body: JSON.stringify({ deviceId: x.id, count: 5 }),
                               });
 
-                              const j = await r.json().catch(() => ({} as any));
+                              const j: DeviceSyncResponse = await r.json().catch(() => ({}));
 
                               if (!r.ok || !j?.ok) {
                                 flash("error", `Sync başarısız${j?.error ? ` • ${j.error}` : ""}`);

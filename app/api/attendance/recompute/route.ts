@@ -2,10 +2,12 @@ import { NextResponse } from "next/server";
 import { requireRole } from "@/src/auth/guard";
 import { authErrorResponse } from "@/src/utils/api";
 import { recomputeAttendanceForDate } from "@/src/services/attendance.service";
+import { writeAudit } from "@/src/audit/writeAudit";
+import { AuditAction, AuditTargetType, UserRole } from "@prisma/client";
 
 export async function POST(req: Request) {
   try {
-    await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR"]);
+    const session = await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR"]);
 
     const url = new URL(req.url);
     const date = url.searchParams.get("date") ?? "";
@@ -15,6 +17,23 @@ export async function POST(req: Request) {
     }
 
     const data = await recomputeAttendanceForDate(date);
+
+    await writeAudit({
+      req,
+      actorUserId: session.userId,
+      actorRole: session.role as unknown as UserRole,
+      action: AuditAction.RECOMPUTE,
+      targetType: AuditTargetType.ATTENDANCE,
+      targetId: date, // date is safe & useful as targetId
+      details: {
+        date,
+        employeesComputed: data?.employeesComputed ?? null,
+        presentCount: data?.presentCount ?? null,
+        absentCount: data?.absentCount ?? null,
+        missingPunchCount: data?.missingPunchCount ?? null,
+      },
+    });
+
     return NextResponse.json(data);
   } catch (err) {
     const auth = authErrorResponse(err);

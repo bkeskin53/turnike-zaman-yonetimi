@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireKioskOrAdmin } from "@/src/auth/kiosk";
 import { requireRole } from "@/src/auth/guard";
 import { authErrorResponse } from "@/src/utils/api";
 import { prisma } from "@/src/repositories/prisma";
@@ -6,6 +7,16 @@ import { getActiveCompanyId } from "@/src/services/company.service";
 import { addManualEvent } from "@/src/services/rawEvent.service";
 
 export async function POST(req: Request) {
+  // Kiosk guard:
+  // - SYSTEM_ADMIN session => allowed
+  // - x-kiosk-pin header must match env KIOSK_PIN => allowed
+  // - otherwise => deny
+  const access = await requireKioskOrAdmin(req);
+  if (!access.ok) {
+    // Keep error codes predictable for UI mapping
+    // (UI already maps 401/403 nicely)
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
   try {
     // For now, reuse existing authorization model.
     // Later we can introduce a dedicated KIOSK role without changing kiosk UX.

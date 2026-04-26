@@ -3,6 +3,7 @@ import { DateTime } from "luxon";
 import { getSessionOrNull } from "@/src/auth/guard";
 import { getCompanyBundle } from "@/src/services/company.service";
 import { buildDailyReportItems } from "@/src/services/reports/dailyReport.service";
+import { getEmployeeScopeWhereForSession } from "@/src/auth/scope";
 
 function isISODate(v: string | null) {
   if (!v) return false;
@@ -96,6 +97,7 @@ export async function GET(req: Request) {
   const tz = bundle.policy?.timezone || "Europe/Istanbul";
   const companyId = bundle.company.id;
   const policy = bundle.policy;
+  const employeeScopeWhere = await getEmployeeScopeWhereForSession(session);
 
   const start = DateTime.fromISO(from!, { zone: tz }).startOf("day");
   const end = DateTime.fromISO(to!, { zone: tz }).startOf("day");
@@ -143,7 +145,7 @@ export async function GET(req: Request) {
 
   for (let d = start; d <= end; d = d.plus({ days: 1 })) {
     const dateISO = d.toFormat("yyyy-MM-dd");
-    const items = await buildDailyReportItems({ companyId, date: dateISO, tz, policy });
+    const items = await buildDailyReportItems({ companyId, date: dateISO, tz, policy, employeeWhere: employeeScopeWhere });
 
     for (const it of items) {
       const anomaliesArr = Array.isArray(it.anomalies) ? it.anomalies : [];

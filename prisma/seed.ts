@@ -73,8 +73,6 @@ async function main() {
         code: "DEFAULT",
         name: "Default Rule Set",
 
-        shiftStartMinute: basePolicy.shiftStartMinute,
-        shiftEndMinute: basePolicy.shiftEndMinute,
         breakMinutes: basePolicy.breakMinutes,
         lateGraceMinutes: basePolicy.lateGraceMinutes,
         earlyLeaveGraceMinutes: basePolicy.earlyLeaveGraceMinutes,
@@ -94,6 +92,13 @@ async function main() {
         workedCalculationMode: basePolicy.workedCalculationMode,
         otBreakInterval: basePolicy.otBreakInterval,
         otBreakDuration: basePolicy.otBreakDuration,
+
+        attendanceOwnershipMode: basePolicy.attendanceOwnershipMode,
+        minimumRestMinutes: basePolicy.minimumRestMinutes,
+        ownershipEarlyInMinutes: basePolicy.ownershipEarlyInMinutes,
+        ownershipLateOutMinutes: basePolicy.ownershipLateOutMinutes,
+        ownershipNextShiftLookaheadMinutes: basePolicy.ownershipNextShiftLookaheadMinutes,
+        unscheduledWorkBehavior: basePolicy.unscheduledWorkBehavior,
       },
     });
   }

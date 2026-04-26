@@ -168,7 +168,8 @@ function formatScopeTR(scope: string) {
   }
 }
 
-export default function ShiftOverridesPage() {
+export default function ShiftOverridesPage({ canWrite }: { canWrite: boolean }) {
+  const readOnly = !canWrite;
   const [shiftTemplates, setShiftTemplates] = useState<ShiftTemplate[]>([]);
   const [ruleSets, setRuleSets] = useState<RuleSet[]>([]);
   const [items, setItems] = useState<any[]>([]);
@@ -197,9 +198,9 @@ export default function ShiftOverridesPage() {
     setLoading(true);
     try {
       const [stRes, rsRes, itRes] = await Promise.all([
-        fetch("/api/shift-templates?includeInactive=1"),
-        fetch("/api/policy/rule-sets"),
-        fetch("/api/policy/shift-assignments"),
+        fetch("/api/shift-templates?includeInactive=1", { credentials: "include" }),
+        fetch("/api/policy/rule-sets", { credentials: "include" }),
+        fetch("/api/policy/shift-assignments", { credentials: "include" }),
       ]);
       const stJson = await stRes.json();
       const rsJson = await rsRes.json();
@@ -224,6 +225,7 @@ export default function ShiftOverridesPage() {
   }, [items, filterShiftCode]);
 
   async function create() {
+    if (readOnly) return; // supervisor guard
     setSaving(true);
     try {
       const body: any = {
@@ -242,6 +244,7 @@ export default function ShiftOverridesPage() {
       const res = await fetch("/api/policy/shift-assignments", {
         method: "POST",
         headers: { "content-type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(body),
       });
       const json = await res.json();
@@ -253,10 +256,12 @@ export default function ShiftOverridesPage() {
   }
 
   async function remove(id: string) {
+    if (readOnly) return; // supervisor guard
     if (!id) return;
     const res = await fetch("/api/policy/shift-assignments", {
       method: "DELETE",
       headers: { "content-type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ id }),
     });
     const json = await res.json();
@@ -270,7 +275,12 @@ export default function ShiftOverridesPage() {
         tone="info"
         title="Vardiya İstisna Kuralları (Shift Override)"
         subtitle="Belirli bir vardiya için, seçtiğiniz kapsamda (şube/grup/personel) farklı bir kural seti uygulamak içindir."
-        right={<Badge tone="info">Kılavuz</Badge>}
+        right={
+          <div className="flex items-center gap-2">
+            {readOnly ? <Badge tone="warn">Read-only (Supervisor)</Badge> : null}
+            <Badge tone="info">Kılavuz</Badge>
+          </div>
+        }
       >
         <div className="flex flex-wrap items-center gap-2">
           <IconChip tone="info" icon={<span className="text-[12px]">🧠</span>}>
@@ -294,6 +304,7 @@ export default function ShiftOverridesPage() {
               className={cx("mt-1", inputClass)}
               value={filterShiftCode}
               onChange={(e) => setFilterShiftCode(e.target.value)}
+              disabled={loading}
             >
               <option value="">(Hepsi)</option>
               {shiftTemplates
@@ -326,7 +337,7 @@ export default function ShiftOverridesPage() {
         <div className="grid gap-3 md:grid-cols-6">
           <div className="md:col-span-2">
             <div className="text-xs font-semibold text-zinc-700">Kapsam (scope)</div>
-            <select className={cx("mt-1", inputClass)} value={scope} onChange={(e) => setScope(e.target.value)}>
+            <select className={cx("mt-1", inputClass)} value={scope} onChange={(e) => setScope(e.target.value)} disabled={saving || readOnly}>
               <option value="SHIFT">Vardiya (Genel)</option>
               <option value="BRANCH_SHIFT">Şube + Vardiya</option>
               <option value="EMPLOYEE_GROUP_SHIFT">Grup + Vardiya</option>
@@ -340,7 +351,7 @@ export default function ShiftOverridesPage() {
 
           <div className="md:col-span-2">
             <div className="text-xs font-semibold text-zinc-700">Vardiya</div>
-            <select className={cx("mt-1", inputClass)} value={shiftCode} onChange={(e) => setShiftCode(e.target.value)}>
+            <select className={cx("mt-1", inputClass)} value={shiftCode} onChange={(e) => setShiftCode(e.target.value)} disabled={saving || readOnly}>
               <option value="">(seç)</option>
               {shiftTemplates
                 .slice()
@@ -355,7 +366,7 @@ export default function ShiftOverridesPage() {
 
           <div className="md:col-span-2">
             <div className="text-xs font-semibold text-zinc-700">Kural Seti (RuleSet)</div>
-           <select className={cx("mt-1", inputClass)} value={ruleSetId} onChange={(e) => setRuleSetId(e.target.value)}>
+           <select className={cx("mt-1", inputClass)} value={ruleSetId} onChange={(e) => setRuleSetId(e.target.value)} disabled={saving || readOnly}>
               <option value="">(seç)</option>
               {ruleSets
                 .slice()
@@ -375,6 +386,7 @@ export default function ShiftOverridesPage() {
               type="number"
               value={priority}
               onChange={(e) => setPriority(Number(e.target.value))}
+              disabled={saving || readOnly}
             />
             <div className="mt-1 text-[11px] text-zinc-600">
               Çakışma durumunda hangi kaydın seçileceğini etkiler.
@@ -388,6 +400,7 @@ export default function ShiftOverridesPage() {
               placeholder="YYYY-AA-GG"
               value={validFromDayKey}
               onChange={(e) => setValidFromDayKey(e.target.value)}
+              disabled={saving || readOnly}
             />
           </div>
 
@@ -398,6 +411,7 @@ export default function ShiftOverridesPage() {
               placeholder="YYYY-AA-GG"
               value={validToDayKey}
               onChange={(e) => setValidToDayKey(e.target.value)}
+              disabled={saving || readOnly}
             />
           </div>
 
@@ -416,6 +430,7 @@ export default function ShiftOverridesPage() {
                       className={cx("mt-1", inputClass)}
                       value={employeeId}
                       onChange={(e) => setEmployeeId(e.target.value)}
+                      disabled={saving || readOnly}
                     />
                   </div>
                 )}
@@ -426,6 +441,7 @@ export default function ShiftOverridesPage() {
                       className={cx("mt-1", inputClass)}
                       value={employeeGroupId}
                       onChange={(e) => setEmployeeGroupId(e.target.value)}
+                      disabled={saving || readOnly}
                     />
                   </div>
                 )}
@@ -436,6 +452,7 @@ export default function ShiftOverridesPage() {
                       className={cx("mt-1", inputClass)}
                       value={employeeSubgroupId}
                       onChange={(e) => setEmployeeSubgroupId(e.target.value)}
+                      disabled={saving || readOnly}
                     />
                   </div>
                 )}
@@ -446,6 +463,7 @@ export default function ShiftOverridesPage() {
                       className={cx("mt-1", inputClass)}
                       value={branchId}
                       onChange={(e) => setBranchId(e.target.value)}
+                      disabled={saving || readOnly}
                     />
                   </div>
                 )}
@@ -462,7 +480,7 @@ export default function ShiftOverridesPage() {
               <Button
                 variant="primary"
                 onClick={create}
-                disabled={saving || !shiftCode || !ruleSetId || !scope}
+                disabled={saving || readOnly || !shiftCode || !ruleSetId || !scope}
                 title="İstisna kuralını kaydet"
               >
                 {saving ? "Kaydediliyor…" : "Kaydet"}
@@ -520,7 +538,13 @@ export default function ShiftOverridesPage() {
                     <td className="px-2 py-2 text-right tabular-nums">{it.priority ?? 100}</td>
                     <td className="px-2 py-2 text-zinc-700">{valid}</td>
                     <td className="px-2 py-2 text-right">
-                      <Button variant="secondary" className="px-3 py-1.5 text-xs" onClick={() => remove(it.id)}>
+                      <Button
+                        variant="secondary"
+                        className="px-3 py-1.5 text-xs"
+                        onClick={() => remove(it.id)}
+                        disabled={readOnly}
+                        title={readOnly ? "Read-only" : "Sil"}
+                      >
                         Sil
                       </Button>
                     </td>

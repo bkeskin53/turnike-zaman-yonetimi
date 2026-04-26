@@ -1,23 +1,19 @@
-import AppShell from "@/app/_components/AppShellNoSSR";
-// Import the client component directly. It's marked with 'use client' so it will be rendered on the client automatically.
-import Employee360Client from "./ui";
+import { redirect } from "next/navigation";
 
-// The params argument is asynchronous in Next.js 15+ dynamic routes.
-// Mark the component as async and await the params before using its properties.
 export default async function EmployeeDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams?: Promise<{ asOf?: string }>;
 }) {
-  // Await params to extract the id
   const { id } = await params;
-  return (
-    <AppShell
-      title="Employee 360"
-      subtitle="Çalışan detayları ve gün sonu özetleri"
-    >
-      {/* Pass the employee id to client component */}
-      <Employee360Client id={id} />
-    </AppShell>
+  const qp = searchParams ? await searchParams : undefined;
+  const asOf = String(qp?.asOf ?? "").trim();
+
+  redirect(
+    asOf
+      ? `/employees/${id}/master?asOf=${encodeURIComponent(asOf)}`
+      : `/employees/${id}/master`,
   );
 }

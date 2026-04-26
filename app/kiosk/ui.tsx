@@ -12,7 +12,7 @@ function cx(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
 }
 
-export default function KioskClient() {
+export default function KioskClient({ isAdmin }: { isAdmin: boolean }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [code, setCode] = useState("");
   const [direction, setDirection] = useState<"IN" | "OUT">("IN");
@@ -20,9 +20,20 @@ export default function KioskClient() {
   // Optional: door selection (kept minimal; can be hidden later behind "Ayarlar")
   const [doors, setDoors] = useState<Door[]>([]);
   const [doorId, setDoorId] = useState<string>("");
+  const [doorsBlocked, setDoorsBlocked] = useState(false);
 
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<PunchResult | null>(null);
+
+  // Kiosk PIN gate (device token)
+  const [pin, setPin] = useState("");
+  const [pinInput, setPinInput] = useState("");
+  const [unlocking, setUnlocking] = useState(false);
+  const [lockErr, setLockErr] = useState<string | null>(null);
+
+  const unlocked = useMemo(() => {
+    return !!String(pin ?? "").trim();
+  }, [pin]);
 
   const selectedDoor = useMemo(() => {
     if (!doorId) return null;
@@ -40,6 +51,31 @@ export default function KioskClient() {
     return r === "ACCESS_ONLY";
   }, [selectedDoor]);
 
+  function getPinFromStorage() {
+    try {
+      return String(window.sessionStorage.getItem("kiosk_pin") ?? "").trim();
+    } catch {
+      return "";
+    }
+  }
+
+  function setPinToStorage(v: string) {
+    try {
+      if (!v) window.sessionStorage.removeItem("kiosk_pin");
+      else window.sessionStorage.setItem("kiosk_pin", v);
+    } catch {
+      // ignore
+    }
+  }
+
+  function mapKioskAuthError(code: string) {
+    const c = String(code ?? "").trim();
+    if (c === "KIOSK_DISABLED") return "Kiosk kapalı. (KIOSK_PIN tanımlı değil) — admin test modu hariç.";
+    if (c === "KIOSK_PIN_REQUIRED") return "PIN gerekli.";
+    if (c === "KIOSK_PIN_INVALID") return "PIN hatalı.";
+    return "Kiosk yetkilendirme başarısız.";
+  }
+
   // Auto-apply door default direction (kiosk ergonomisi)
   useEffect(() => {
     if (!doorDefaultDir) return;
@@ -51,24 +87,45 @@ export default function KioskClient() {
     return result.ok ? "ok" : "bad";
   }, [result]);
 
+  // Bootstrap PIN from sessionStorage for kiosk devices
+  useEffect(() => {
+    const stored = getPinFromStorage();
+    if (stored) setPin(stored);
+  }, []);
+
   async function loadDoors() {
     try {
-      const res = await fetch("/api/org/doors", { credentials: "include" });
-      if (!res.ok) return;
+      // Note: /api/org/doors may be session-guarded.
+      // If kiosk runs without user session, this may 401/403.
+      // In that case we just hide door selector (punch still works without door).
+      const headers: Record<string, string> = {};
+      if (!isAdmin && pin) headers["x-kiosk-pin"] = pin;
+
+      const res = await fetch("/api/org/doors", { credentials: "include", headers });
+      if (!res.ok) {
+        setDoorsBlocked(true);
+        setDoors([]);
+        return;
+      }
       const json = await res.json();
       const arr: Door[] = Array.isArray(json) ? json : json.items ?? [];
       setDoors(arr);
+      setDoorsBlocked(false);
     } catch {
       // ignore
+      setDoorsBlocked(true);
+      setDoors([]);
     }
   }
 
   useEffect(() => {
+    if (!unlocked) return;
     loadDoors();
-  }, []);
+  }, [unlocked]);
 
   // Keep focus in the scanner input (kiosk behavior)
   useEffect(() => {
+    if (!unlocked) return;
     inputRef.current?.focus();
   });
 
@@ -79,9 +136,47 @@ export default function KioskClient() {
     return () => window.clearTimeout(t);
   }, [result]);
 
+  async function unlock() {
+    const nextPin = String(pinInput ?? "").trim();
+    if (!nextPin || unlocking) return;
+    setUnlocking(true);
+    setLockErr(null);
+    try {
+      const res = await fetch("/api/kiosk/auth", {
+        method: "GET",
+        headers: { "x-kiosk-pin": nextPin },
+        credentials: "include",
+      });
+      const j = await res.json().catch(() => ({} as any));
+      if (!res.ok || !j?.ok) {
+        setLockErr(mapKioskAuthError(String(j?.error ?? "")));
+        return;
+      }
+      setPin(nextPin);
+      setPinToStorage(nextPin);
+      setPinInput("");
+      setResult(null);
+    } catch (e: any) {
+      setLockErr(e?.message ?? "Bağlantı hatası.");
+    } finally {
+      setUnlocking(false);
+    }
+  }
+
+  function logoutKiosk() {
+    setPin("");
+    setPinInput("");
+    setPinToStorage("");
+    setDoorId("");
+    setDoors([]);
+    setResult(null);
+    setLockErr(null);
+  }
+
   async function submit() {
     const raw = String(code ?? "").trim();
     if (!raw || busy) return;
+    if (!unlocked) return;
     if (doorId && isAccessOnlyDoor) {
       setResult({ ok: false, message: "Bu kapı ACCESS_ONLY (PDKS işlemi yapılamaz)." });
       setCode("");
@@ -107,9 +202,12 @@ export default function KioskClient() {
 
     setBusy(true);
     try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (pin) headers["x-kiosk-pin"] = pin;
+
       const res = await fetch("/api/kiosk/punch", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         credentials: "include",
         body: JSON.stringify({
           code: raw,
@@ -163,6 +261,60 @@ export default function KioskClient() {
     }
   }
 
+  // LOCK SCREEN (PIN gate) — admin bypass
+  if (!unlocked) {
+    return (
+      <div className="mx-auto grid min-h-screen w-full max-w-3xl content-center gap-6 px-4 py-10">
+        <header className="grid gap-2 text-center">
+          <div className="text-xs font-semibold tracking-widest text-white/60">TURNİKE ZAMAN YÖNETİMİ</div>
+          <h1 className="text-2xl font-bold sm:text-3xl">Kiosk Kilitli</h1>
+          <p className="text-sm text-white/70">Bu cihaz kiosk PIN ile yetkilendirilmeli.</p>
+        </header>
+
+        <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-white/60">Kiosk PIN</div>
+          <input
+            value={pinInput}
+            onChange={(e) => setPinInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                unlock();
+              }
+            }}
+            placeholder="PIN girin…"
+            className="h-14 w-full rounded-xl border border-white/10 bg-black/30 px-4 text-lg text-white outline-none focus:border-white/20 placeholder:text-white/30"
+            autoFocus
+            inputMode="numeric"
+            autoComplete="off"
+          />
+          <button
+            type="button"
+            onClick={unlock}
+            disabled={unlocking || !String(pinInput ?? "").trim()}
+            className="h-12 rounded-xl bg-white text-sm font-semibold text-zinc-950 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:bg-white/50"
+          >
+            {unlocking ? "Doğrulanıyor…" : "Aç (Enter)"}
+          </button>
+
+          {lockErr ? (
+            <div className="rounded-xl border border-rose-400/30 bg-rose-500/15 px-3 py-2 text-sm text-rose-100">
+              {lockErr}
+            </div>
+          ) : null}
+
+          <div className="text-xs text-white/45">
+            Not: PIN bu tarayıcı oturumu boyunca saklanır. (sessionStorage)
+          </div>
+        </div>
+
+        <footer className="text-center text-xs text-white/35">
+          Kiosk güvenliği • Role değil cihaz PIN’e bağlı • Admin test modu hariç
+        </footer>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto grid min-h-screen w-full max-w-3xl content-center gap-6 px-4 py-10">
       <header className="grid gap-2 text-center">
@@ -172,6 +324,16 @@ export default function KioskClient() {
           Barkodu okutun (veya sicil / kart no girip <span className="font-semibold">Enter</span> basın).
         </p>
       </header>
+
+      {/* Small status/identity chip */}
+      <div className="flex flex-wrap items-center justify-center gap-2 text-xs">
+        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-white/70">
+          Mod: <span className="font-semibold text-white">Kiosk PIN</span>
+        </span>
+        <button onClick={logoutKiosk} className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-white/70 hover:bg-white/10">
+          Kilitle
+        </button>
+      </div>
 
       {/* Direction */}
       <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
@@ -215,6 +377,7 @@ export default function KioskClient() {
           <select
             value={doorId}
             onChange={(e) => setDoorId(e.target.value)}
+            disabled={doorsBlocked || doors.length === 0}
             className="h-11 rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none focus:border-white/20"
           >
             <option value="">— Seçilmedi —</option>
@@ -224,6 +387,11 @@ export default function KioskClient() {
               </option>
             ))}
           </select>
+          {doorsBlocked ? (
+            <div className="text-xs text-white/45">
+              Kapı listesi alınamadı (yetki/oturum olabilir). Kiosk, kapı seçmeden çalışır.
+            </div>
+          ) : null}
           {doorId && isAccessOnlyDoor ? (
             <div className="text-xs text-rose-200">
               Bu kapıda sadece erişim var (ACCESS_ONLY). PDKS punch gönderilemez.

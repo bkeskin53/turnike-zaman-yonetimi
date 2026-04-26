@@ -10,8 +10,6 @@ export type PolicyResolution =
         code: string;
         name: string;
 
-        shiftStartMinute: number;
-        shiftEndMinute: number;
         breakMinutes: number;
         lateGraceMinutes: number;
         earlyLeaveGraceMinutes: number;
@@ -49,6 +47,11 @@ export async function resolvePolicyRuleSetForEmployeeOnDate(args: {
   companyId: string;
   employeeId: string;
   dayKey: string; // canonical work day key (YYYY-MM-DD)
+  employeeContext?: {
+    branchId: string | null;
+    employeeGroupId: string | null;
+    employeeSubgroupId: string | null;
+  } | null;
 }): Promise<PolicyResolution> {
   const targetDayDb = dbDateFromDayKey(args.dayKey);
 
@@ -72,8 +75,6 @@ export async function resolvePolicyRuleSetForEmployeeOnDate(args: {
           code: true,
           name: true,
 
-          shiftStartMinute: true,
-          shiftEndMinute: true,
           breakMinutes: true,
           lateGraceMinutes: true,
           earlyLeaveGraceMinutes: true,
@@ -107,10 +108,12 @@ export async function resolvePolicyRuleSetForEmployeeOnDate(args: {
   }
 
   // Load employee context once (for subgroup/group/branch fallbacks)
-  const emp = await prisma.employee.findFirst({
-    where: { id: args.employeeId, companyId: args.companyId },
-    select: { id: true, branchId: true, employeeGroupId: true, employeeSubgroupId: true },
-  });
+  const emp =
+    args.employeeContext ??
+    (await prisma.employee.findFirst({
+      where: { id: args.employeeId, companyId: args.companyId },
+      select: { id: true, branchId: true, employeeGroupId: true, employeeSubgroupId: true },
+    }));
 
   // 2) EMPLOYEE_SUBGROUP scope
   if (emp?.employeeSubgroupId) {
@@ -132,8 +135,6 @@ export async function resolvePolicyRuleSetForEmployeeOnDate(args: {
             id: true,
             code: true,
             name: true,
-            shiftStartMinute: true,
-            shiftEndMinute: true,
             breakMinutes: true,
             lateGraceMinutes: true,
             earlyLeaveGraceMinutes: true,
@@ -184,8 +185,6 @@ export async function resolvePolicyRuleSetForEmployeeOnDate(args: {
             id: true,
             code: true,
             name: true,
-            shiftStartMinute: true,
-            shiftEndMinute: true,
             breakMinutes: true,
             lateGraceMinutes: true,
             earlyLeaveGraceMinutes: true,
@@ -236,8 +235,6 @@ export async function resolvePolicyRuleSetForEmployeeOnDate(args: {
             id: true,
             code: true,
             name: true,
-            shiftStartMinute: true,
-            shiftEndMinute: true,
             breakMinutes: true,
             lateGraceMinutes: true,
             earlyLeaveGraceMinutes: true,

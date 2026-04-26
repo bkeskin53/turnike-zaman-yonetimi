@@ -1,4 +1,4 @@
-import type { ExitExceedAction } from "@prisma/client";
+import type { ExitExceedAction, AttendanceOwnershipMode, UnscheduledWorkBehavior } from "@prisma/client";
 import { prisma } from "@/src/repositories/prisma";
 
 export async function findCompanyById(id: string) {
@@ -59,6 +59,12 @@ export async function upsertPolicy(
     maxSingleExitMinutes?: number;
     maxDailyExitMinutes?: number;
     exitExceedAction?: ExitExceedAction;
+    attendanceOwnershipMode?: AttendanceOwnershipMode;
+    minimumRestMinutes?: number;
+    ownershipEarlyInMinutes?: number;
+    ownershipLateOutMinutes?: number;
+    ownershipNextShiftLookaheadMinutes?: number;
+    unscheduledWorkBehavior?: UnscheduledWorkBehavior;
 
     // Behavior for punches on leave days. Reuses OffDayEntryBehavior.
     leaveEntryBehavior?: "IGNORE" | "FLAG" | "COUNT_AS_OT";

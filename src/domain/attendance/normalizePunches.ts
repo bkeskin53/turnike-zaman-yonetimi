@@ -28,7 +28,15 @@ export type NormalizationResult = {
 };
 
 export function normalizePunches(events: PunchEvent[]): NormalizationResult {
-  const sorted = [...events].sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
+  const sorted = [...events].sort((a, b) => {
+    const diff = a.occurredAt.getTime() - b.occurredAt.getTime();
+    if (diff !== 0) return diff;
+
+    // Deterministic tie-break for same timestamp:
+    // IN must be processed before OUT so a same-moment pair can still form a segment.
+    if (a.direction === b.direction) return 0;
+    return a.direction === EventDirection.IN ? -1 : 1;
+  });
 
   const decisions: Record<string, NormalizedDecision> = {};
   const acceptedEvents: Array<{ occurredAt: Date; direction: EventDirection }> = [];
@@ -39,9 +47,9 @@ export function normalizePunches(events: PunchEvent[]): NormalizationResult {
 
   const seenSignature = new Set<string>(); // direction|timestamp
   let openIn: { occurredAt: Date } | null = null;
-  // Track last processed (non-duplicate) direction, regardless of accepted/rejected.
-  // This enables "CONSECUTIVE_OUT" detection when OUTs arrive back-to-back with no open IN.
-  let lastNonDuplicateDirection: EventDirection | null = null;
+  // Track only last ACCEPTED direction.
+  // Rejected events must not poison subsequent classification.
+  let lastAcceptedDirection: EventDirection | null = null;
 
   let firstIn: Date | null = null;
   let lastOut: Date | null = null;
@@ -58,9 +66,9 @@ export function normalizePunches(events: PunchEvent[]): NormalizationResult {
     }
     seenSignature.add(sig);
     // IMPORTANT:
-    // We must compare against the *previous* non-duplicate direction.
-    // Therefore we snapshot it first, then update at the end of processing this event.
-    const prevNonDuplicateDirection = lastNonDuplicateDirection;
+    // Consecutive classification should only look at the previous ACCEPTED direction.
+    // A rejected event must not affect the next event's meaning.
+    const prevAcceptedDirection = lastAcceptedDirection;
 
     if (ev.direction === "IN") {
       if (openIn) {
@@ -74,7 +82,7 @@ export function normalizePunches(events: PunchEvent[]): NormalizationResult {
       acceptedEvents.push({ occurredAt: ev.occurredAt, direction: ev.direction });
       openIn = { occurredAt: ev.occurredAt };
       if (!firstIn) firstIn = ev.occurredAt;
-      lastNonDuplicateDirection = ev.direction;
+      lastAcceptedDirection = ev.direction;
       return;
     }
 
@@ -83,14 +91,13 @@ export function normalizePunches(events: PunchEvent[]): NormalizationResult {
       // Distinguish between:
       // - ORPHAN_OUT: OUT with no prior accepted IN
       // - CONSECUTIVE_OUT: OUT immediately after an accepted OUT (two OUTs in a row)
-      if (prevNonDuplicateDirection === "OUT") {
+      if (prevAcceptedDirection === "OUT") {
         if (ev.id) decisions[ev.id] = { status: "REJECTED", reason: "CONSECUTIVE_OUT" };
         addAnomaly("CONSECUTIVE_OUT");
       } else {
         if (ev.id) decisions[ev.id] = { status: "REJECTED", reason: "ORPHAN_OUT" };
         addAnomaly("ORPHAN_OUT");
       }
-      lastNonDuplicateDirection = ev.direction;
       return;
     }
 
@@ -98,11 +105,17 @@ export function normalizePunches(events: PunchEvent[]): NormalizationResult {
     if (ev.id) decisions[ev.id] = { status: "ACCEPTED" };
     acceptedEvents.push({ occurredAt: ev.occurredAt, direction: ev.direction });
 
-    segments.push({ inAt: openIn.occurredAt, outAt: ev.occurredAt });
+    if (ev.occurredAt > openIn.occurredAt) {
+      segments.push({ inAt: openIn.occurredAt, outAt: ev.occurredAt });
+      lastOut = ev.occurredAt;
+    } else {
+      // Same-timestamp or reversed edge case should not create a zero/negative segment.
+      if (ev.id) decisions[ev.id] = { status: "REJECTED", reason: "DUPLICATE_EVENT" };
+      addAnomaly("DUPLICATE_EVENT");
+    }
     openIn = null;
 
-    lastOut = ev.occurredAt;
-    lastNonDuplicateDirection = ev.direction;
+    lastAcceptedDirection = ev.direction;
   });
 
   const hasOpenIn = !!openIn;

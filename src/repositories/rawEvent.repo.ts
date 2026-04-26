@@ -1,5 +1,7 @@
 import { prisma } from "@/src/repositories/prisma";
+import type { Prisma } from "@prisma/client";
 import { EventDirection, EventSource } from "@prisma/client";
+import { DateTime } from "luxon";
 
 export async function createRawEvent(companyId: string, input: {
   employeeId: string;
@@ -28,8 +30,10 @@ export async function listRawEvents(
   filter: {
     employeeId?: string;
     date?: string; // YYYY-MM-DD
+    timezone?: string;
     doorId?: string;
     deviceId?: string;
+    employeeWhere?: Prisma.EmployeeWhereInput | null;
   }
 ) {
   const where: any = { companyId };
@@ -37,12 +41,21 @@ export async function listRawEvents(
   if (filter.employeeId) where.employeeId = filter.employeeId;
   if (filter.doorId) where.doorId = filter.doorId;
   if (filter.deviceId) where.deviceId = filter.deviceId;
-
+  if (filter.employeeWhere) where.employee = filter.employeeWhere;
+  
   if (filter.date) {
-    // basit v1: server local gün sınırı
-    const start = new Date(`${filter.date}T00:00:00`);
-    const end = new Date(`${filter.date}T23:59:59.999`);
-    where.occurredAt = { gte: start, lte: end };
+    const tz = filter.timezone || "Europe/Istanbul";
+    const start = DateTime.fromISO(filter.date, { zone: tz }).startOf("day");
+    const nextDayStart = start.plus({ days: 1 });
+
+    if (!start.isValid || !nextDayStart.isValid) {
+      throw new Error("INVALID_FILTER_DATE");
+    }
+
+    where.occurredAt = {
+      gte: start.toUTC().toJSDate(),
+      lt: nextDayStart.toUTC().toJSDate(),
+    };
   }
 
   return prisma.rawEvent.findMany({

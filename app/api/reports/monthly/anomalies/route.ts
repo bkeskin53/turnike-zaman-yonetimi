@@ -4,6 +4,7 @@ import { DateTime } from "luxon";
 import { getSessionOrNull } from "@/src/auth/guard";
 import { prisma } from "@/src/repositories/prisma";
 import { getCompanyBundle } from "@/src/services/company.service";
+import { getEmployeeScopeWhereForSession, withCompanyEmployeeWhere } from "@/src/auth/scope";
 
 export async function GET(req: Request) {
   const session = await getSessionOrNull();
@@ -24,12 +25,26 @@ export async function GET(req: Request) {
 
   const bundle = await getCompanyBundle();
   const tz = bundle.policy?.timezone || "Europe/Istanbul";
+  const companyId = bundle.company.id;
+  const employeeScopeWhere = await getEmployeeScopeWhereForSession(session);
+
+  // Detail guard: supervisor must not be able to query anomalies for out-of-scope employeeId
+  if (employeeScopeWhere) {
+    const allowed = await prisma.employee.findFirst({
+      where: { ...withCompanyEmployeeWhere(companyId, employeeScopeWhere), id: employeeId },
+      select: { id: true },
+    });
+    if (!allowed) {
+      return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+    }
+  }
 
   const start = DateTime.fromISO(`${month}-01`, { zone: tz }).startOf("month");
   const end = start.endOf("month");
 
   const rows = await prisma.dailyAttendance.findMany({
     where: {
+      companyId,
       employeeId,
       workDate: {
         gte: start.toJSDate(),

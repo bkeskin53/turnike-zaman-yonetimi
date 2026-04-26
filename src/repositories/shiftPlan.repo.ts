@@ -23,6 +23,25 @@ export async function findWeeklyShiftPlan(
 }
 
 /**
++ * Batch fetch weekly shift plans for multiple employees for the same weekStartDate.
++ * This is the key N+1 breaker for recompute paths.
++ */
+export async function findWeeklyShiftPlansForEmployees(
+  companyId: string,
+  employeeIds: string[],
+  weekStartDate: Date
+) {
+  if (!employeeIds.length) return [];
+  return prisma.weeklyShiftPlan.findMany({
+    where: {
+      companyId,
+      weekStartDate,
+      employeeId: { in: employeeIds },
+    },
+  });
+}
+
+/**
  * Upsert a weekly shift plan. If a plan already exists for the given company, employee, and week, it is updated; otherwise a new record is created.
  * @param input Plan details including day start/end minutes.
  */

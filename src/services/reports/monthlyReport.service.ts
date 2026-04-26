@@ -54,7 +54,7 @@ import { prisma } from "@/src/repositories/prisma";
 import { findWeeklyShiftPlan } from "@/src/repositories/shiftPlan.repo";
 import { recomputeAttendanceForDate } from "@/src/services/attendance.service";
 import { computeWeekStartUTC } from "@/src/services/shiftPlan.service";
-
+import { Prisma } from "@prisma/client";
 
 // ------------------------------------------------------------
 // CSV Helpers (Excel/TR friendly)
@@ -148,9 +148,9 @@ export async function buildMonthlyReportItems(args: {
   companyId: string;
   tz: string;
   month: string | null;
-  sync: boolean;
+  employeeWhere?: Prisma.EmployeeWhereInput | null;
 }) {
-  const { companyId, tz, month, sync } = args;
+  const { companyId, tz, month, employeeWhere } = args;
   const monthKey = month ?? DateTime.now().setZone(tz).toFormat("yyyy-MM");
   const { monthKey: normalizedMonth, fromUTC, toUTC } = buildMonthRangeUTC(monthKey, tz);
 
@@ -191,17 +191,42 @@ export async function buildMonthlyReportItems(args: {
     return plan ?? null;
   }
 
-  if (sync) {
-    const cursor = DateTime.fromJSDate(fromUTC).setZone(tz).startOf("day");
-    const end = DateTime.fromJSDate(toUTC).setZone(tz).startOf("day");
-    for (let d = cursor; d < end; d = d.plus({ days: 1 })) {
-      const dateISO = d.toFormat("yyyy-MM-dd");
-      await recomputeAttendanceForDate(dateISO);
-    }
-  }
+  // IMPORTANT:
+  // Monthly report is a read/reporting layer.
+  // It must NOT trigger expensive recompute work inside the request.
+  // Recompute is handled separately via queue/admin flow.
 
-  const rows = await listDailyAttendanceRange(companyId, fromUTC, toUTC);
+  const rows = await listDailyAttendanceRange(companyId, fromUTC, toUTC, employeeWhere ?? null);
   const employeeIds = Array.from(new Set(rows.map((r) => r.employeeId)));
+
+  const employeeCount = await prisma.employee.count({
+    where: {
+      companyId,
+      isActive: true,
+      ...(employeeWhere ?? {}),
+    },
+  });
+
+  const fromLocal = DateTime.fromJSDate(fromUTC).setZone(tz).startOf("day");
+  const toLocalExclusive = DateTime.fromJSDate(toUTC).setZone(tz).startOf("day");
+  const daysInMonth = Math.max(0, Math.round(toLocalExclusive.diff(fromLocal, "days").days));
+  const expectedRows = employeeCount * daysInMonth;
+  const computedRows = rows.length;
+  const missingRows = Math.max(0, expectedRows - computedRows);
+  const coveragePct =
+    expectedRows > 0 ? Number(((computedRows / expectedRows) * 100).toFixed(1)) : 100;
+
+  const presentDayKeys = new Set(
+    rows.map((r: any) =>
+      DateTime.fromJSDate(r.workDate, { zone: "utc" }).setZone(tz).toISODate()
+    )
+  );
+
+  const missingDayKeys: string[] = [];
+  for (let d = fromLocal; d < toLocalExclusive; d = d.plus({ days: 1 })) {
+    const dk = d.toISODate()!;
+    if (!presentDayKeys.has(dk)) missingDayKeys.push(dk);
+  }
 
   const adjustments = employeeIds.length
     ? await prisma.dailyAdjustment.findMany({
@@ -331,5 +356,18 @@ export async function buildMonthlyReportItems(args: {
     return ac.localeCompare(bc, "tr");
   });
 
-  return { month: normalizedMonth, items };
+  return {
+    month: normalizedMonth,
+    coverage: {
+      expectedEmployeeCount: employeeCount,
+      daysInMonth,
+      expectedRows,
+      computedRows,
+      missingRows,
+      coveragePct,
+      isComplete: missingRows === 0,
+      missingDayKeys,
+    },
+    items,
+  };
 }

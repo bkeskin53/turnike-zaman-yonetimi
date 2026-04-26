@@ -1,6 +1,7 @@
 import { getSessionOrNull } from "@/src/auth/guard";
 import { getActiveCompanyId, getCompanyBundle } from "@/src/services/company.service";
 import { buildMonthlyReportItems } from "@/src/services/reports/monthlyReport.service";
+import { getEmployeeScopeWhereForSession } from "@/src/auth/scope";
 
 function csvCell(v: unknown): string {
   const s = String(v ?? "");
@@ -19,7 +20,6 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const month = url.searchParams.get("month");
-  const sync = url.searchParams.get("sync") === "1";
   if (!month || !/^\d{4}-\d{2}$/.test(month)) {
     return new Response(JSON.stringify({ error: "month is required (YYYY-MM)" }), {
       status: 400,
@@ -31,7 +31,13 @@ export async function GET(req: Request) {
   const { policy, company } = await getCompanyBundle();
   const tz = policy.timezone || "Europe/Istanbul";
 
-  const { items } = await buildMonthlyReportItems({ companyId, tz, month, sync });
+  const employeeScopeWhere = await getEmployeeScopeWhereForSession(session);
+    const { items } = await buildMonthlyReportItems({
+    companyId,
+    tz,
+    month,
+    employeeWhere: employeeScopeWhere,
+  });
 
   const header = [
     "month",

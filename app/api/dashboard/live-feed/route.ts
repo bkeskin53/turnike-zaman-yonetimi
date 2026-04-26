@@ -3,6 +3,7 @@ import { requireRole } from "@/src/auth/guard";
 import { prisma } from "@/src/repositories/prisma";
 import { getActiveCompanyId } from "@/src/services/company.service";
 import { authErrorResponse } from "@/src/utils/api";
+import { getEmployeeScopeWhereForSession } from "@/src/auth/scope";
 
 export const runtime = "nodejs";
 /**
@@ -14,11 +15,12 @@ export const runtime = "nodejs";
 export async function GET(req: Request) {
   try {
     // Read-only dashboard feed (must be authenticated)
-    await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN", "HR_OPERATOR", "SUPERVISOR"]);
+    const session = await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN", "HR_OPERATOR", "SUPERVISOR"]);
+    const employeeWhere = await getEmployeeScopeWhereForSession(session);
 
     const companyId = await getActiveCompanyId();
     const events = await prisma.rawEvent.findMany({
-      where: { companyId },
+      where: employeeWhere ? { companyId, employee: employeeWhere } : { companyId },
       orderBy: { occurredAt: "desc" },
       take: 10,
       select: {

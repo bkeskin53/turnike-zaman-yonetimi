@@ -74,6 +74,26 @@ export type DailyComputed = {
   lastOut: Date | null;
 
   workedMinutes: number;
+  /**
+   * Raw worked total before automatic break deduction and before paid grace addition.
+   * This is NOT a final scheduled/unscheduled split value.
+   * Final bucket allocation must be decided in evaluateAttendanceDay().
+   */
+  rawWorkedMinutes?: number;
+  /**
+   * Actual break minutes deducted from the raw worked model.
+   * Contract:
+   * final workedMinutes = rawWorkedMinutes - breakDeductAppliedMinutes + gracePaidMinutes
+   * (subject to >= 0 clamps performed by the base engine)
+   */
+  breakDeductAppliedMinutes?: number;
+  /**
+   * Paid grace minutes added back into workedMinutes in PAID_PARTIAL mode.
+   * Grace belongs to scheduled-time semantics and must be allocated in the
+   * final evaluation layer, not guessed from total worked.
+   */
+  gracePaidMinutes?: number;
+
   lateMinutes: number;
   earlyLeaveMinutes: number;
   overtimeMinutes: number;
@@ -86,11 +106,19 @@ export type DailyComputed = {
    * Status of the day:
    * - PRESENT: Employee has valid punches and is working
    * - ABSENT: No punches on a scheduled work day
-   * - OFF: Weekend or configured off day
+   * - OFF: Resolver/policy tarafından OFF olarak işaretlenmiş gün
    * - LEAVE: Employee is on an approved leave; computed in attendance.service
    */
   status: "PRESENT" | "ABSENT" | "OFF" | "LEAVE";
   anomalies: string[];
+  anomalyMeta?: Record<
+    string,
+    {
+      actual: number;
+      limit: number;
+      exceededMinutes: number;
+    }
+  >;
 };
 
 function toMinuteInt(n: number) {
@@ -101,6 +129,51 @@ function toMinuteInt(n: number) {
 function diffMinutes(a: Date, b: Date) {
   // b - a
   return toMinuteInt((b.getTime() - a.getTime()) / 60000);
+}
+
+function intersectWindow(
+  start: Date,
+  end: Date,
+  windowStart: Date,
+  windowEnd: Date
+): { start: Date; end: Date } | null {
+  const s = start > windowStart ? start : windowStart;
+  const e = end < windowEnd ? end : windowEnd;
+  return e > s ? { start: s, end: e } : null;
+}
+
+function collectExitGapMinutesWithinShift(args: {
+  segments: Array<{ inAt: Date; outAt: Date }>;
+  shiftStartUtc: Date;
+  shiftEndUtc: Date;
+}) {
+  const gaps: number[] = [];
+
+  for (let i = 0; i < args.segments.length - 1; i++) {
+    const current = args.segments[i];
+    const next = args.segments[i + 1];
+    if (!current || !next) continue;
+    if (next.inAt <= current.outAt) continue;
+
+    const overlap = intersectWindow(
+      current.outAt,
+      next.inAt,
+      args.shiftStartUtc,
+      args.shiftEndUtc
+    );
+    if (!overlap) continue;
+
+    gaps.push(diffMinutes(overlap.start, overlap.end));
+  }
+
+  const total = gaps.reduce((sum, x) => sum + x, 0);
+  const maxSingle = gaps.length > 0 ? Math.max(...gaps) : 0;
+
+  return {
+    gaps,
+    total,
+    maxSingle,
+  };
 }
 
 function computeOutsideShiftMinutesDetailed(
@@ -128,32 +201,6 @@ function computeOutsideShiftMinutesDetailed(
     }
   }
   return { early, late };
-}
-
-function computeOutsideShiftMinutes(
-  segments: Array<{ inAt: Date; outAt: Date }>,
-  shiftStartUtc: Date,
-  shiftEndUtc: Date
-): number {
-  let outside = 0;
-  for (const seg of segments) {
-    const segStart = seg.inAt;
-    const segEnd = seg.outAt;
-    if (segEnd <= segStart) continue;
-
-    // Portion before shift start
-    if (segStart < shiftStartUtc) {
-      const beforeEnd = segEnd < shiftStartUtc ? segEnd : shiftStartUtc;
-      if (beforeEnd > segStart) outside += diffMinutes(segStart, beforeEnd);
-    }
-
-    // Portion after shift end
-    if (segEnd > shiftEndUtc) {
-      const afterStart = segStart > shiftEndUtc ? segStart : shiftEndUtc;
-      if (segEnd > afterStart) outside += diffMinutes(afterStart, segEnd);
-    }
-  }
-  return outside;
 }
 
 export function computeOvertimeDynamicBreak(args: {
@@ -242,8 +289,10 @@ export function computeDailyAttendance(input: {
   const tz = input.timezone || "Europe/Istanbul";
 
   const policy = input.policy ?? {};
-  const shiftStartMinute = policy.shiftStartMinute ?? 8 * 60; // default 08:00
-  const shiftEndMinute = policy.shiftEndMinute ?? 17 * 60;    // default 17:00
+  const hasReferenceShift =
+    typeof policy.shiftStartMinute === "number" && typeof policy.shiftEndMinute === "number";
+  const shiftStartMinute = hasReferenceShift ? (policy.shiftStartMinute as number) : 0;
+  const shiftEndMinute = hasReferenceShift ? (policy.shiftEndMinute as number) : 0;
 
   const breakAutoDeductEnabled = !!policy.breakAutoDeductEnabled;
   const breakMinutes = policy.breakMinutes ?? 0;
@@ -256,6 +305,12 @@ export function computeDailyAttendance(input: {
   const overtimeMode: "BOTH" | "EARLY_ONLY" | "LATE_ONLY" = policy.overtimeMode ?? "BOTH";
   const workedCalculationMode: "ACTUAL" | "CLAMP_TO_SHIFT" =
     policy.workedCalculationMode ?? "ACTUAL";
+  const exitExceedAction: "IGNORE" | "WARN" | "FLAG" =
+    policy.exitExceedAction ?? "IGNORE";
+  const maxSingleExitMinutes =
+    typeof policy.maxSingleExitMinutes === "number" ? policy.maxSingleExitMinutes : 0;
+  const maxDailyExitMinutes =
+    typeof policy.maxDailyExitMinutes === "number" ? policy.maxDailyExitMinutes : 0;
   // Determine grace mode: use explicit graceMode if provided. If undefined, derive from
   // graceAffectsWorked for backwards compatibility. Default is ROUND_ONLY.
   const graceMode: "ROUND_ONLY" | "PAID_PARTIAL" =
@@ -280,12 +335,12 @@ export function computeDailyAttendance(input: {
   const shiftStartUtc = shiftStart.toUTC().toJSDate();
   const shiftEndUtc = shiftEnd.toUTC().toJSDate();
 
-  const weekday = dayStart.weekday; // 1..7
-  const isWeekendOff = weekday === 6 || weekday === 7;
-  const isOffDay = policy.isOffDay === true || isWeekendOff;
+  const isOffDay = policy.isOffDay === true;
 
-  // OFF day: shift window clamp is meaningless; force ACTUAL to avoid weird clamp behavior.
-  const effectiveWorkedMode: "ACTUAL" | "CLAMP_TO_SHIFT" = isOffDay ? "ACTUAL" : workedCalculationMode;
+  // OFF day or no-reference-shift:
+  // shift window clamp is meaningless; force ACTUAL to avoid fake 08:00-17:00 math.
+  const effectiveWorkedMode: "ACTUAL" | "CLAMP_TO_SHIFT" =
+    isOffDay || !hasReferenceShift ? "ACTUAL" : workedCalculationMode;
 
   // worked = sum of valid IN->OUT segments
   let workedMinutes = 0;
@@ -300,6 +355,10 @@ export function computeDailyAttendance(input: {
       workedMinutes += diffMinutes(seg.inAt, seg.outAt);
     }
   }
+
+  const rawWorkedMinutes = workedMinutes;
+  let breakDeductAppliedMinutes = 0;
+  let gracePaidMinutes = 0;
 
   if (breakAutoDeductEnabled && workedMinutes > 0) {
     const exitConsumesBreak = !!policy.exitConsumesBreak;
@@ -328,15 +387,24 @@ export function computeDailyAttendance(input: {
           : potentialTotal;
       // Deduct whichever is greater: the configured break or the total exit gap.
       const deduct = Math.max(breakMinutes, exitGapMinutes);
-      workedMinutes = Math.max(0, baseMinutes - deduct);
+      const nextWorked = Math.max(0, baseMinutes - deduct);
+      breakDeductAppliedMinutes = Math.max(0, baseMinutes - nextWorked);
+      workedMinutes = nextWorked;
     } else {
       // Default behavior: subtract only the fixed break from actual worked minutes.
-      workedMinutes = Math.max(0, workedMinutes - breakMinutes);
+      const nextWorked = Math.max(0, workedMinutes - breakMinutes);
+      breakDeductAppliedMinutes = Math.max(0, workedMinutes - nextWorked);
+      workedMinutes = nextWorked;
     }
   }
 
-  const firstIn = norm.firstIn;
-  const lastOut = norm.lastOut;
+  const firstSegment = norm.segments[0] ?? null;
+  const lastSegment = norm.segments.length > 0 ? norm.segments[norm.segments.length - 1] : null;
+
+  // Segment truth wins for daily boundaries.
+  // Fall back to raw normalized first/last only when no complete segment exists.
+  const firstIn = firstSegment?.inAt ?? norm.firstIn;
+  const lastOut = lastSegment?.outAt ?? norm.lastOut;
 
   let lateMinutes = 0;
   let earlyLeaveMinutes = 0;
@@ -345,6 +413,15 @@ export function computeDailyAttendance(input: {
   let overtimeLateMinutes = 0;
   let otBreakCount = 0;
   let otBreakDeductMinutes = 0;
+
+  const canUseShiftComparisons =
+    hasReferenceShift && !isOffDay;
+
+  const shouldApplyShiftBasedLateEarly =
+    canUseShiftComparisons;
+
+  const shouldApplyShiftBasedOvertime =
+    canUseShiftComparisons && overtimeEnabled;
 
   // Off day behavior
   if (isOffDay) {
@@ -357,6 +434,9 @@ export function computeDailyAttendance(input: {
         firstIn: null,
         lastOut: null,
         workedMinutes: 0,
+        rawWorkedMinutes: 0,
+        breakDeductAppliedMinutes: 0,
+        gracePaidMinutes: 0,
         lateMinutes: 0,
         earlyLeaveMinutes: 0,
         overtimeMinutes: 0,
@@ -375,6 +455,9 @@ export function computeDailyAttendance(input: {
         firstIn,
         lastOut,
         workedMinutes: 0,
+        rawWorkedMinutes,
+        breakDeductAppliedMinutes,
+        gracePaidMinutes: 0,
         lateMinutes: 0,
         earlyLeaveMinutes: 0,
         overtimeMinutes: 0,
@@ -401,6 +484,9 @@ export function computeDailyAttendance(input: {
         firstIn,
         lastOut,
         workedMinutes,
+        rawWorkedMinutes,
+        breakDeductAppliedMinutes,
+        gracePaidMinutes: 0,
         lateMinutes: 0,
         earlyLeaveMinutes: 0,
         overtimeMinutes: otAdjusted.overtimeMinutes,
@@ -418,6 +504,9 @@ export function computeDailyAttendance(input: {
       firstIn,
       lastOut,
       workedMinutes,
+      rawWorkedMinutes,
+      breakDeductAppliedMinutes,
+      gracePaidMinutes: 0,
       lateMinutes: 0,
       earlyLeaveMinutes: 0,
       overtimeMinutes: 0,
@@ -431,13 +520,42 @@ export function computeDailyAttendance(input: {
   }
 
   // Regular day
-  // Build anomaly set (we may enrich/override some raw-normalization anomalies below).
-  const anomalies = new Set(norm.anomalies);
+  // Build final anomaly set from domain truth, not blindly from raw normalization.
+  const anomalies = new Set<string>();
+  const anomalyMeta: Record<
+    string,
+    {
+      actual: number;
+      limit: number;
+      exceededMinutes: number;
+    }
+  > = {};
+
+  // Keep only anomalies that are still meaningful after segment evaluation.
+  if (norm.hasOpenIn) {
+    anomalies.add("MISSING_PUNCH");
+  }
+
+  // Only surface single-punch / alternating anomalies when we could not form any valid segment.
+  if (norm.segments.length === 0) {
+    for (const anomaly of norm.anomalies) {
+      if (
+        anomaly === "ORPHAN_OUT" ||
+        anomaly === "CONSECUTIVE_IN" ||
+        anomaly === "CONSECUTIVE_OUT" ||
+        anomaly === "DUPLICATE_EVENT"
+      ) {
+        anomalies.add(anomaly);
+      }
+    }
+  }
 
   // Detect whether any normalized IN→OUT segment overlaps the scheduled shift window.
   // Used for premium mismatch classification and (in CLAMP mode) presence.
   const hasAnySegment = norm.segments.length > 0;
-  let hasAnyOverlapWithShift = false;
+  let hasAnyOverlapWithShift = !canUseShiftComparisons ? hasAnySegment : false;
+
+  if (canUseShiftComparisons) {
   if (hasAnySegment) {
     for (const seg of norm.segments) {
       const inAt = seg.inAt < shiftStartUtc ? shiftStartUtc : seg.inAt;
@@ -448,28 +566,65 @@ export function computeDailyAttendance(input: {
       }
     }
   }
+  }
 
   // Premium anomaly classification:
   // If there are segments but NONE overlaps the shift window, do not show ORPHAN_OUT.
   // Instead, mark the day as "unscheduled work" (ACTUAL) or "outside shift ignored" (CLAMP).
-  if (hasAnySegment && !hasAnyOverlapWithShift) {
-    if (effectiveWorkedMode === "CLAMP_TO_SHIFT") {
-      anomalies.add("OUTSIDE_SHIFT_IGNORED");
-    } else {
-      anomalies.add("UNSCHEDULED_WORK");
+  if (canUseShiftComparisons) {
+    if (hasAnySegment && !hasAnyOverlapWithShift) {
+      if (effectiveWorkedMode === "CLAMP_TO_SHIFT") {
+        anomalies.add("OUTSIDE_SHIFT_IGNORED");
+      } else {
+        anomalies.add("UNSCHEDULED_WORK");
+      }
+      anomalies.delete("ORPHAN_OUT");
+      anomalies.delete("CONSECUTIVE_IN");
+      anomalies.delete("CONSECUTIVE_OUT");
     }
-    anomalies.delete("ORPHAN_OUT");
   }
   
+  // Exit limit controls:
+  // - only evaluate real OUT->IN gaps
+  // - only evaluate the portion that overlaps the scheduled shift window
+  // - do not mutate worked again; only surface anomaly according to policy
+  if (canUseShiftComparisons) {
+    const exitGapMetrics = collectExitGapMinutesWithinShift({
+      segments: norm.segments,
+      shiftStartUtc,
+      shiftEndUtc,
+    });
+
+    if (exitExceedAction !== "IGNORE") {
+      if (maxSingleExitMinutes > 0 && exitGapMetrics.maxSingle > maxSingleExitMinutes) {
+        anomalies.add("SINGLE_EXIT_LIMIT_EXCEEDED");
+        anomalyMeta["SINGLE_EXIT_LIMIT_EXCEEDED"] = {
+          actual: exitGapMetrics.maxSingle,
+          limit: maxSingleExitMinutes,
+          exceededMinutes: Math.max(0, exitGapMetrics.maxSingle - maxSingleExitMinutes),
+        };
+      }
+
+      if (maxDailyExitMinutes > 0 && exitGapMetrics.total > maxDailyExitMinutes) {
+        anomalies.add("DAILY_EXIT_LIMIT_EXCEEDED");
+        anomalyMeta["DAILY_EXIT_LIMIT_EXCEEDED"] = {
+          actual: exitGapMetrics.total,
+          limit: maxDailyExitMinutes,
+          exceededMinutes: Math.max(0, exitGapMetrics.total - maxDailyExitMinutes),
+        };
+      }
+    }
+  }
+
   // IMPORTANT (CLAMP_TO_SHIFT):
   // Presence should be derived from accepted work within the scheduled shift window.
   // Otherwise, a shift-mismatched segment (e.g., day punches on a night shift) would
   // incorrectly mark the day as PRESENT even though workedMinutes is clamped to 0.
   let hasShiftOverlap = false;
-  if (firstIn && effectiveWorkedMode === "CLAMP_TO_SHIFT") {
+  if (hasAnySegment && effectiveWorkedMode === "CLAMP_TO_SHIFT") {
     hasShiftOverlap = hasAnyOverlapWithShift;
   }
-  const status: "PRESENT" | "ABSENT" = firstIn
+  const status: "PRESENT" | "ABSENT" = hasAnySegment
     ? effectiveWorkedMode === "CLAMP_TO_SHIFT"
       ? hasShiftOverlap
         ? "PRESENT"
@@ -477,13 +632,13 @@ export function computeDailyAttendance(input: {
       : "PRESENT"
     : "ABSENT";
 
-  if (firstIn) {
+  if (firstIn && hasAnyOverlapWithShift && shouldApplyShiftBasedLateEarly) {
     const firstLocal = DateTime.fromJSDate(firstIn, { zone: "utc" }).setZone(tz);
     const lateRaw = toMinuteInt(firstLocal.diff(shiftStart, "minutes").minutes) - lateGraceMinutes;
     lateMinutes = Math.max(0, lateRaw);
   }
 
-  if (lastOut) {
+  if (lastOut && hasAnyOverlapWithShift && shouldApplyShiftBasedLateEarly) {
     const lastLocal = DateTime.fromJSDate(lastOut, { zone: "utc" }).setZone(tz);
 
     // Early leave: shiftEnd - lastOut if lastOut before shiftEnd
@@ -495,7 +650,7 @@ export function computeDailyAttendance(input: {
   // OT (SAP mantığına uygun): shift dışına taşan kabul edilmiş segment parçalarının toplamı
   // - Erken giriş (shiftStart öncesi) + geç çıkış (shiftEnd sonrası)
   // - Overnight vardiya için shiftEnd zaten +1 gün ayarlı
-  if (status === "PRESENT" && overtimeEnabled) {
+  if (status === "PRESENT" && shouldApplyShiftBasedOvertime) {
     const detailed = computeOutsideShiftMinutesDetailed(norm.segments, shiftStartUtc, shiftEndUtc);
     overtimeEarlyMinutes = detailed.early;
     overtimeLateMinutes = detailed.late;
@@ -541,9 +696,7 @@ export function computeDailyAttendance(input: {
 
   // In PAID_PARTIAL mode, grace-covered late/early minutes are added to workedMinutes.
   // Do not apply when graceMode is ROUND_ONLY.
-  if (status === "PRESENT" && graceMode === "PAID_PARTIAL") {
-    let extraGrace = 0;
-
+  if (status === "PRESENT" && hasAnyOverlapWithShift && graceMode === "PAID_PARTIAL") {    let extraGrace = 0;
     if (firstIn) {
       const firstLocal = DateTime.fromJSDate(firstIn, { zone: "utc" }).setZone(tz);
       const lateDiff = toMinuteInt(firstLocal.diff(shiftStart, "minutes").minutes); // >0 means late
@@ -560,6 +713,7 @@ export function computeDailyAttendance(input: {
       }
     }
 
+    gracePaidMinutes = extraGrace;
     workedMinutes += extraGrace;
 
     // IMPORTANT:
@@ -577,6 +731,9 @@ export function computeDailyAttendance(input: {
     firstIn,
     lastOut,
     workedMinutes: status === "PRESENT" ? workedMinutes : 0,
+    rawWorkedMinutes: status === "PRESENT" ? rawWorkedMinutes : 0,
+    breakDeductAppliedMinutes: status === "PRESENT" ? breakDeductAppliedMinutes : 0,
+    gracePaidMinutes: status === "PRESENT" ? gracePaidMinutes : 0,
     lateMinutes: status === "PRESENT" ? lateMinutes : 0,
     earlyLeaveMinutes: status === "PRESENT" ? earlyLeaveMinutes : 0,
     overtimeMinutes: status === "PRESENT" ? overtimeMinutes : 0,
@@ -586,5 +743,6 @@ export function computeDailyAttendance(input: {
     otBreakDeductMinutes: status === "PRESENT" ? otBreakDeductMinutes : 0,
     status,
     anomalies: Array.from(anomalies),
+    anomalyMeta: Object.keys(anomalyMeta).length > 0 ? anomalyMeta : undefined,
   };
 }

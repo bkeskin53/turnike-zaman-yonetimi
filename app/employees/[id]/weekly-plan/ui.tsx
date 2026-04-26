@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { DateTime } from "luxon";
+import { useSearchParams } from "next/navigation";
+import EmployeeDetailSubnav from "../_components/EmployeeDetailSubnav";
+import EmployeeHistoricalModeBanner from "../_components/EmployeeHistoricalModeBanner";
 
 function cx(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
@@ -47,7 +50,11 @@ function Card({
 }
 
 function Label({ children }: { children: React.ReactNode }) {
-  return <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{children}</span>;
+  return (
+    <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+      {children}
+    </span>
+  );
 }
 
 function Button({
@@ -138,7 +145,12 @@ function Badge({
           ? "bg-zinc-50 text-zinc-700 ring-zinc-200 dark:bg-zinc-900/60 dark:text-zinc-200 dark:ring-zinc-800"
           : "bg-sky-50 text-sky-900 ring-sky-200 dark:bg-sky-950/40 dark:text-sky-200 dark:ring-sky-900/60";
   return (
-    <span className={cx("inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1", cls)}>
+    <span
+      className={cx(
+        "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1",
+        cls,
+      )}
+    >
       {children}
     </span>
   );
@@ -149,20 +161,23 @@ function ChipButton({
   onClick,
   title,
   className,
+  disabled,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   title?: string;
   className?: string;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       title={title}
       onClick={onClick}
+      disabled={disabled}
       className={cx(
         "inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-800",
-        "hover:bg-zinc-50",
+        "hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60",
         "dark:border-zinc-800 dark:bg-zinc-950/40 dark:text-zinc-200 dark:hover:bg-zinc-900/60",
         className,
       )}
@@ -172,10 +187,14 @@ function ChipButton({
   );
 }
 
-// Minimal, calm inline icons (emoji yerine)
 function Icon({ children }: { children: React.ReactNode }) {
-  return <span className="inline-flex h-4 w-4 items-center justify-center opacity-80 dark:opacity-90">{children}</span>;
+  return (
+    <span className="inline-flex h-4 w-4 items-center justify-center opacity-80 dark:opacity-90">
+      {children}
+    </span>
+  );
 }
+
 const I = {
   Calendar: (
     <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden="true">
@@ -187,21 +206,37 @@ const I = {
         strokeWidth="1.6"
       />
     </svg>
- ),
+  ),
   ChevronL: (
     <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden="true">
-      <path d="M14.5 6.5 9 12l5.5 5.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M14.5 6.5 9 12l5.5 5.5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   ),
   ChevronR: (
     <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden="true">
-     <path d="M9.5 6.5 15 12l-5.5 5.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M9.5 6.5 15 12l-5.5 5.5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   ),
   Copy: (
     <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden="true">
       <path d="M9 9h10v10H9V9Z" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" stroke="currentColor" strokeWidth="1.6" />
+      <path
+        d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
     </svg>
   ),
   Moon: (
@@ -213,16 +248,26 @@ const I = {
         strokeLinejoin="round"
       />
     </svg>
- ),
+  ),
   Pin: (
     <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden="true">
-      <path d="M14 3 10 7v4l-3 3h10l-3-3V7l-1-4Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path
+        d="M14 3 10 7v4l-3 3h10l-3-3V7l-1-4Z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
       <path d="M12 14v7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   ),
   Pencil: (
     <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden="true">
-     <path d="M4 20h4l10.5-10.5a2 2 0 0 0 0-3L16 4a2 2 0 0 0-3 0L2.5 14.5V18" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path
+        d="M4 20h4l10.5-10.5a2 2 0 0 0 0-3L16 4a2 2 0 0 0-3 0L2.5 14.5V18"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
     </svg>
   ),
   Layers: (
@@ -234,32 +279,37 @@ const I = {
   ),
 };
 
-// Convert minutes to HH:mm string. Returns empty string if value is null or undefined.
 function minutesToHHMM(mins: number | null | undefined): string {
   if (mins === null || mins === undefined || isNaN(mins)) return "";
-  const hh = Math.floor(mins / 60)
-    .toString()
-    .padStart(2, "0");
-  const mm = (mins % 60)
-    .toString()
-    .padStart(2, "0");
+  const hh = Math.floor(mins / 60).toString().padStart(2, "0");
+  const mm = (mins % 60).toString().padStart(2, "0");
   return `${hh}:${mm}`;
 }
 
-// Compute the Monday (week start) in ISO YYYY-MM-DD for a given date, using policy timezone.
 function computeWeekStart(date: Date, tz: string): string {
   const dt = DateTime.fromJSDate(date, { zone: tz }).startOf("day");
   const monday = dt.minus({ days: dt.weekday - 1 });
   return monday.toISODate()!;
 }
 
-// Add days to an ISO date string (YYYY-MM-DD), using policy timezone.
+function computeWeekStartFromISO(isoDay: string, tz: string): string {
+  const dt = DateTime.fromISO(isoDay, { zone: tz }).startOf("day");
+  if (!dt.isValid) return computeWeekStart(new Date(), tz);
+  const monday = dt.minus({ days: dt.weekday - 1 });
+  return monday.toISODate()!;
+}
+
 function addDays(dateStr: string, days: number, tz: string): string {
   const dt = DateTime.fromISO(dateStr, { zone: tz }).startOf("day").plus({ days });
   return dt.toISODate()!;
 }
 
-// Days keys and their human-readable Turkish names
+function currentDayKeyForTimezone(tz: string): string {
+  const dt = DateTime.now().setZone(tz || "Europe/Istanbul");
+  if (!dt.isValid) return DateTime.now().setZone("Europe/Istanbul").toISODate()!;
+  return dt.toISODate()!;
+}
+
 const dayKeys = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
 const dayNames = [
   "Pazartesi",
@@ -271,7 +321,6 @@ const dayNames = [
   "Pazar",
 ] as const;
 
-// Type for time fields state
 type TimesState = {
   monStart: string;
   monEnd: string;
@@ -287,20 +336,65 @@ type TimesState = {
   satEnd: string;
   sunStart: string;
   sunEnd: string;
-  };
+};
 
 type ShiftTemplateItem = {
   id: string;
+  shiftCode?: string;
   signature: string;
-  startTime: string; // "HH:mm"
-  endTime: string;   // "HH:mm"
+  startTime: string;
+  endTime: string;
   spansMidnight: boolean;
 };
 
+type ResolvedShiftDay = {
+  dayKey: string;
+  shiftBadge?: string | null;
+  shiftSource?: string | null;
+  shiftStartMinute?: number | null;
+  shiftEndMinute?: number | null;
+};
+
+function isOffTemplate(t: Partial<ShiftTemplateItem> | null | undefined): boolean {
+  if (!t) return false;
+  const code = String((t as any)?.shiftCode ?? "").trim().toUpperCase();
+  const sig = String((t as any)?.signature ?? "").trim().toUpperCase();
+  return code === "OFF" || sig === "OFF";
+}
+
+function trShiftSourceTR(src: string | null | undefined): string {
+  const v = String(src ?? "").trim();
+  switch (v) {
+    case "WEEK_TEMPLATE":
+      return "Haftalık Plan";
+    case "DAY_TEMPLATE":
+      return "Günlük Override";
+    case "WORK_SCHEDULE":
+      return "Çalışma Planı (Rota)";
+    case "POLICY":
+      return "Kural (Policy)";
+    case "CUSTOM":
+      return "Özel";
+    default:
+      return v || "Sistem";
+  }
+}
+
+function hhmmFromMinute(min: number | null | undefined): string {
+  if (typeof min !== "number" || Number.isNaN(min)) return "—";
+  const m = Math.max(0, Math.floor(min));
+  const hh = String(Math.floor(m / 60)).padStart(2, "0");
+  const mm = String(m % 60).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
 export default function WeeklyPlanClient({ id }: { id: string }) {
-const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
- const [weekStart, setWeekStart] = useState<string>(() =>
-    computeWeekStart(new Date(), "Europe/Istanbul")
+  const searchParams = useSearchParams();
+  const asOf = String(searchParams.get("asOf") ?? "").trim();
+
+  const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
+  const [weekStart, setWeekStart] = useState<string>(() =>
+    computeWeekStart(new Date(), "Europe/Istanbul"),
   );
   const [times, setTimes] = useState<TimesState>(() => ({
     monStart: "",
@@ -309,7 +403,7 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
     tueEnd: "",
     wedStart: "",
     wedEnd: "",
-  thuStart: "",
+    thuStart: "",
     thuEnd: "",
     friStart: "",
     friEnd: "",
@@ -321,7 +415,6 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
 
   const [defaultStart, setDefaultStart] = useState<string>("");
   const [defaultEnd, setDefaultEnd] = useState<string>("");
-  // Stage 3: week-level default template + day overrides
   const [templates, setTemplates] = useState<ShiftTemplateItem[]>([]);
   const [weekTemplateId, setWeekTemplateId] = useState<string>("NONE");
   const [dayMode, setDayMode] = useState<Record<(typeof dayKeys)[number], string>>({
@@ -340,9 +433,35 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
   const [isDirty, setIsDirty] = useState<boolean>(false);
   const [templateQuery, setTemplateQuery] = useState<string>("");
   const [highlightDays, setHighlightDays] = useState<Record<string, boolean>>({});
+  const [weekResolvedMap, setWeekResolvedMap] = useState<Record<string, ResolvedShiftDay>>({});
+  const [loadingWeekResolved, setLoadingWeekResolved] = useState<boolean>(false);
 
-  // ------------------------------------------------------------
-  // Week summary (UI only)
+  const isHistorical = Boolean(asOf);
+  const lockedHistoricalWeekStart = useMemo(
+    () => (isHistorical ? computeWeekStartFromISO(asOf, timezone) : null),
+    [asOf, isHistorical, timezone],
+  );
+
+  const historyMeta = useMemo(
+    () =>
+      isHistorical
+        ? {
+            dayKey: asOf,
+            todayDayKey: currentDayKeyForTimezone(timezone),
+            isHistorical: true,
+            canEdit: false,
+            mode: "AS_OF" as const,
+            profileSource: "AS_OF_CONTEXT",
+            orgSource: "AS_OF_CONTEXT",
+          }
+        : null,
+    [asOf, isHistorical, timezone],
+  );
+
+  const hasOffTemplate = useMemo(() => {
+    return templates.some((t) => isOffTemplate(t));
+  }, [templates]);
+
   const weekSummary = useMemo(() => {
     let weekTemplateDays = 0;
     let policyDays = 0;
@@ -352,7 +471,6 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
 
     dayKeys.forEach((key) => {
       const mode = dayMode[key];
-
       const isExplicitDayTemplate = !!mode && mode !== "DEFAULT" && mode !== "CUSTOM";
       const isWeekTemplateDefault = mode === "DEFAULT" && weekTemplateId !== "NONE";
       const isPolicyDefault = mode === "DEFAULT" && (weekTemplateId === "NONE" || !weekTemplateId);
@@ -361,7 +479,6 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
       const overnightByDayTemplate = isOvernightMode(mode);
       const overnightByWeekTemplate =
         mode === "DEFAULT" && weekTemplateId !== "NONE" ? !!getWeekTemplate()?.spansMidnight : false;
-      // For CUSTOM, we can infer overnight from displayed times
       const startKey = `${key}Start` as keyof TimesState;
       const endKey = `${key}End` as keyof TimesState;
       const s = (times[startKey] as string) || "";
@@ -380,7 +497,7 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
 
     return { weekTemplateDays, policyDays, dayTemplateDays, customDays, overnightDays };
   }, [dayMode, weekTemplateId, times, templates]);
-  
+
   function classifyDay(key: (typeof dayKeys)[number]) {
     const mode = dayMode[key];
     const isExplicitDayTemplate = !!mode && mode !== "DEFAULT" && mode !== "CUSTOM";
@@ -410,16 +527,13 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
 
   function scrollToDays(keys: (typeof dayKeys)[number][]) {
     if (!keys.length) return;
-    // highlight
     const next: Record<string, boolean> = {};
     keys.forEach((k) => (next[k] = true));
     setHighlightDays(next);
-    // scroll to first match
     const el = document.querySelector(`[data-day-row="${keys[0]}"]`) as HTMLElement | null;
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
     }
-    // auto clear highlight
     window.setTimeout(() => setHighlightDays({}), 1800);
   }
 
@@ -442,7 +556,17 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
       if (!res.ok) return;
       const data = await res.json().catch(() => null);
       const items = Array.isArray((data as any)?.items) ? (data as any).items : [];
-      setTemplates(items);
+      const normalized: ShiftTemplateItem[] = items
+        .map((t: any) => ({
+          id: String(t?.id ?? ""),
+          shiftCode: typeof t?.shiftCode === "string" ? t.shiftCode : undefined,
+          signature: String(t?.signature ?? ""),
+          startTime: String(t?.startTime ?? ""),
+          endTime: String(t?.endTime ?? ""),
+          spansMidnight: !!t?.spansMidnight,
+        }))
+        .filter((t: ShiftTemplateItem) => !!t.id);
+      setTemplates(normalized);
     } catch {
       // ignore
     }
@@ -466,9 +590,8 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
       return sig.includes(q);
     });
   }
-  
+
   function signatureAlreadyHasPlus1(sig: string): boolean {
-    // Handle common forms: "+1" or "(+1)" anywhere in signature
     return /\(\s*\+1\s*\)|\+1/.test(sig);
   }
 
@@ -487,48 +610,65 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
   function getTemplatesForSelect(selectedId?: string | null): ShiftTemplateItem[] {
     const list = getFilteredTemplates();
     if (!selectedId) return list;
-    // selectedId may be "NONE" or special mode strings; only handle real template ids
     if (selectedId === "NONE" || selectedId === "DEFAULT" || selectedId === "CUSTOM") return list;
     const already = list.some((t) => t.id === selectedId);
     if (already) return list;
     const selected = getTemplateById(selectedId);
     if (!selected) return list;
-    // Ensure selected template remains visible even when filtered out
     return [selected, ...list];
   }
 
   function getDefaultDayLabel(): string {
     return weekTemplateId && weekTemplateId !== "NONE"
-      ? "(Default \u2192 Week Template)"
-      : "(Default \u2192 Policy)";
+      ? "(Default → Week Template)"
+      : "(Default → Policy)";
   }
 
   function getDisplayedTime(day: (typeof dayKeys)[number], kind: "start" | "end"): string {
     const mode = dayMode[day];
-    // Day override template
     if (mode && mode !== "DEFAULT" && mode !== "CUSTOM") {
       const tpl = getTemplateById(mode);
       if (tpl) return kind === "start" ? tpl.startTime : tpl.endTime;
     }
 
-    // Default (week template -> policy)
+    if (mode === "DEFAULT") {
+      const idx = dayKeys.indexOf(day);
+      const isoDayKey = addDays(weekStart, idx, timezone);
+      const r = weekResolvedMap[isoDayKey];
+
+      if (kind === "start" && typeof r?.shiftStartMinute === "number") {
+        return hhmmFromMinute(r.shiftStartMinute);
+      }
+      if (kind === "end" && typeof r?.shiftEndMinute === "number") {
+        return hhmmFromMinute(r.shiftEndMinute);
+      }
+    }
+
     if (mode === "DEFAULT") {
       const wk = getWeekTemplate();
       if (wk) return kind === "start" ? wk.startTime : wk.endTime;
       return kind === "start" ? defaultStart : defaultEnd;
     }
 
-    // Custom: state values
     const startKey = `${day}Start` as keyof TimesState;
     const endKey = `${day}End` as keyof TimesState;
     return kind === "start" ? (times[startKey] as string) : (times[endKey] as string);
   }
 
-  // Load company policy to get default shift times
+  function isOffDay(day: (typeof dayKeys)[number], idxHint?: number): boolean {
+    const mode = dayMode[day];
+    if (mode !== "DEFAULT") return false;
+    const idx = typeof idxHint === "number" ? idxHint : dayKeys.indexOf(day);
+    const isoDayKey = addDays(weekStart, idx, timezone);
+    const r = weekResolvedMap[isoDayKey];
+    const badge = String(r?.shiftBadge ?? "").trim().toUpperCase();
+    return badge === "OFF";
+  }
+
   async function loadPolicy() {
     try {
       const res = await fetch(`/api/company`, { credentials: "include" });
-     if (!res.ok) return;
+      if (!res.ok) return;
       const data = await res.json();
       const policy = data?.policy ?? {};
       if (typeof policy.timezone === "string" && policy.timezone.trim()) {
@@ -539,33 +679,26 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
       if (typeof startMin === "number") setDefaultStart(minutesToHHMM(startMin));
       if (typeof endMin === "number") setDefaultEnd(minutesToHHMM(endMin));
     } catch {
-      // ignore policy errors
+      // ignore
     }
   }
 
-  // Load weekly plan for the current weekStart
   async function loadPlan() {
-   if (!id || !weekStart) return;
+    if (!id || !weekStart) return;
     setLoadingPlan(true);
     setError(null);
     setNotice(null);
-    // Load is the source of truth; it resets dirty state.
     setIsDirty(false);
     try {
       const res = await fetch(
-        `/api/employees/${id}/weekly-plan?weekStart=${encodeURIComponent(
-          weekStart
-        )}`,
-        { credentials: "include" }
+        `/api/employees/${id}/weekly-plan?weekStart=${encodeURIComponent(weekStart)}`,
+        { credentials: "include" },
       );
       if (res.ok) {
         const data = await res.json();
         const item = data?.item;
         if (item) {
-          // Week default template
           setWeekTemplateId(item.shiftTemplateId ?? "NONE");
-
-          // Day modes: templateId > custom(minutes) > default
           setDayMode({
             mon: item.monShiftTemplateId ?? (item.monStartMinute != null || item.monEndMinute != null ? "CUSTOM" : "DEFAULT"),
             tue: item.tueShiftTemplateId ?? (item.tueStartMinute != null || item.tueEndMinute != null ? "CUSTOM" : "DEFAULT"),
@@ -575,12 +708,11 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
             sat: item.satShiftTemplateId ?? (item.satStartMinute != null || item.satEndMinute != null ? "CUSTOM" : "DEFAULT"),
             sun: item.sunShiftTemplateId ?? (item.sunStartMinute != null || item.sunEndMinute != null ? "CUSTOM" : "DEFAULT"),
           });
-          // Set times from plan
           setTimes({
             monStart: minutesToHHMM(item.monStartMinute),
             monEnd: minutesToHHMM(item.monEndMinute),
             tueStart: minutesToHHMM(item.tueStartMinute),
-           tueEnd: minutesToHHMM(item.tueEndMinute),
+            tueEnd: minutesToHHMM(item.tueEndMinute),
             wedStart: minutesToHHMM(item.wedStartMinute),
             wedEnd: minutesToHHMM(item.wedEndMinute),
             thuStart: minutesToHHMM(item.thuStartMinute),
@@ -593,7 +725,6 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
             sunEnd: minutesToHHMM(item.sunEndMinute),
           });
         } else {
-          // No plan: prefill with default shift times if available
           setWeekTemplateId("NONE");
           setDayMode({
             mon: "DEFAULT",
@@ -609,20 +740,19 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
             monEnd: defaultEnd,
             tueStart: defaultStart,
             tueEnd: defaultEnd,
-           wedStart: defaultStart,
+            wedStart: defaultStart,
             wedEnd: defaultEnd,
             thuStart: defaultStart,
             thuEnd: defaultEnd,
             friStart: defaultStart,
             friEnd: defaultEnd,
             satStart: defaultStart,
-           satEnd: defaultEnd,
+            satEnd: defaultEnd,
             sunStart: defaultStart,
             sunEnd: defaultEnd,
           });
         }
       } else if (res.status === 404) {
-        // Not found: treat as no plan
         setWeekTemplateId("NONE");
         setDayMode({
           mon: "DEFAULT",
@@ -633,7 +763,7 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
           sat: "DEFAULT",
           sun: "DEFAULT",
         });
-       setTimes({
+        setTimes({
           monStart: defaultStart,
           monEnd: defaultEnd,
           tueStart: defaultStart,
@@ -641,7 +771,7 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
           wedStart: defaultStart,
           wedEnd: defaultEnd,
           thuStart: defaultStart,
-         thuEnd: defaultEnd,
+          thuEnd: defaultEnd,
           friStart: defaultStart,
           friEnd: defaultEnd,
           satStart: defaultStart,
@@ -650,27 +780,85 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
           sunEnd: defaultEnd,
         });
       } else {
-       const txt = await res.text().catch(() => res.statusText);
+        const txt = await res.text().catch(() => res.statusText);
         throw new Error(txt || "Failed to load plan");
       }
-   } catch (e: any) {
+    } catch (e: any) {
       setError(e?.message ?? "Plan load failed");
     } finally {
-     setLoadingPlan(false);
+      setLoadingPlan(false);
     }
   }
 
-  // Copy previous week's plan into current week
+  async function loadWeekResolvedShifts() {
+    if (!id || !weekStart) return;
+    setLoadingWeekResolved(true);
+    try {
+      const res = await fetch(
+        `/api/employees/${id}/week-resolved-shifts?weekStart=${encodeURIComponent(weekStart)}`,
+        { credentials: "include" },
+      );
+      if (!res.ok) {
+        setWeekResolvedMap({});
+        return;
+      }
+      const json = await res.json().catch(() => null);
+      const days: any[] = Array.isArray(json?.item?.days) ? json.item.days : [];
+      const next: Record<string, ResolvedShiftDay> = {};
+      for (const d of days) {
+        const dk = String(d?.dayKey ?? "").slice(0, 10);
+        if (!dk) continue;
+        next[dk] = {
+          dayKey: dk,
+          shiftBadge: d?.shiftBadge ?? null,
+          shiftSource: d?.shiftSource ?? null,
+          shiftStartMinute: typeof d?.shiftStartMinute === "number" ? d.shiftStartMinute : null,
+          shiftEndMinute: typeof d?.shiftEndMinute === "number" ? d.shiftEndMinute : null,
+        };
+      }
+      setWeekResolvedMap(next);
+    } catch {
+      setWeekResolvedMap({});
+    } finally {
+      setLoadingWeekResolved(false);
+    }
+  }
+
+  async function ensureOffTemplate() {
+    if (isHistorical) {
+      setError("Geçmiş modunda OFF template oluşturma kapalıdır.");
+      return;
+    }
+    try {
+      setError(null);
+      setNotice(null);
+      const res = await fetch(`/api/shift-templates/ensure-off`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const txt = await res.text().catch(() => res.statusText);
+        throw new Error(txt || "OFF template oluşturulamadı.");
+      }
+      await loadTemplates();
+      setNotice("OFF template oluşturuldu. Artık günlerde OFF seçebilirsin.");
+    } catch (e: any) {
+      setError(e?.message ?? "OFF template oluşturulamadı.");
+    }
+  }
+
   async function copyPreviousWeek() {
+    if (isHistorical) {
+      setError("Geçmiş modunda haftalık plan kopyalama kapalıdır.");
+      return;
+    }
     const prevWeek = addDays(weekStart, -7, timezone);
     try {
       setError(null);
       setNotice(null);
-     const res = await fetch(
-        `/api/employees/${id}/weekly-plan?weekStart=${encodeURIComponent(
-          prevWeek
-        )}`,
-       { credentials: "include" }
+      const res = await fetch(
+        `/api/employees/${id}/weekly-plan?weekStart=${encodeURIComponent(prevWeek)}`,
+        { credentials: "include" },
       );
       if (!res.ok) {
         const txt = await res.text().catch(() => res.statusText);
@@ -682,35 +870,16 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
 
       if (item) {
         setIsDirty(true);
-        // Week default template (can be null)
         setWeekTemplateId(item.shiftTemplateId ?? "NONE");
-
-       // Day modes: templateId > custom(minutes) > default
         setDayMode({
-          mon:
-            item.monShiftTemplateId ??
-            (item.monStartMinute != null || item.monEndMinute != null ? "CUSTOM" : "DEFAULT"),
-          tue:
-            item.tueShiftTemplateId ??
-            (item.tueStartMinute != null || item.tueEndMinute != null ? "CUSTOM" : "DEFAULT"),
-          wed:
-            item.wedShiftTemplateId ??
-            (item.wedStartMinute != null || item.wedEndMinute != null ? "CUSTOM" : "DEFAULT"),
-          thu:
-            item.thuShiftTemplateId ??
-            (item.thuStartMinute != null || item.thuEndMinute != null ? "CUSTOM" : "DEFAULT"),
-          fri:
-            item.friShiftTemplateId ??
-            (item.friStartMinute != null || item.friEndMinute != null ? "CUSTOM" : "DEFAULT"),
-          sat:
-            item.satShiftTemplateId ??
-            (item.satStartMinute != null || item.satEndMinute != null ? "CUSTOM" : "DEFAULT"),
-          sun:
-            item.sunShiftTemplateId ??
-            (item.sunStartMinute != null || item.sunEndMinute != null ? "CUSTOM" : "DEFAULT"),
+          mon: item.monShiftTemplateId ?? (item.monStartMinute != null || item.monEndMinute != null ? "CUSTOM" : "DEFAULT"),
+          tue: item.tueShiftTemplateId ?? (item.tueStartMinute != null || item.tueEndMinute != null ? "CUSTOM" : "DEFAULT"),
+          wed: item.wedShiftTemplateId ?? (item.wedStartMinute != null || item.wedEndMinute != null ? "CUSTOM" : "DEFAULT"),
+          thu: item.thuShiftTemplateId ?? (item.thuStartMinute != null || item.thuEndMinute != null ? "CUSTOM" : "DEFAULT"),
+          fri: item.friShiftTemplateId ?? (item.friStartMinute != null || item.friEndMinute != null ? "CUSTOM" : "DEFAULT"),
+          sat: item.satShiftTemplateId ?? (item.satStartMinute != null || item.satEndMinute != null ? "CUSTOM" : "DEFAULT"),
+          sun: item.sunShiftTemplateId ?? (item.sunStartMinute != null || item.sunEndMinute != null ? "CUSTOM" : "DEFAULT"),
         });
-
-        // Copy legacy minutes as visible times (Custom days will reflect these)
         setTimes({
           monStart: minutesToHHMM(item.monStartMinute),
           monEnd: minutesToHHMM(item.monEndMinute),
@@ -729,19 +898,18 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
         });
         setNotice("Geçen haftanın planı kopyalandı. Kaydetmeyi unutma.");
       } else {
-        // No previous plan: fill with default
         setIsDirty(true);
         setWeekTemplateId("NONE");
-          setDayMode({
-            mon: "DEFAULT",
-            tue: "DEFAULT",
-            wed: "DEFAULT",
-            thu: "DEFAULT",
-            fri: "DEFAULT",
-            sat: "DEFAULT",
-            sun: "DEFAULT",
-          });
-       setTimes({
+        setDayMode({
+          mon: "DEFAULT",
+          tue: "DEFAULT",
+          wed: "DEFAULT",
+          thu: "DEFAULT",
+          fri: "DEFAULT",
+          sat: "DEFAULT",
+          sun: "DEFAULT",
+        });
+        setTimes({
           monStart: defaultStart,
           monEnd: defaultEnd,
           tueStart: defaultStart,
@@ -760,40 +928,39 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
         setNotice("Önceki hafta için kayıtlı plan yok; varsayılan değerler yüklendi.");
       }
     } catch {
-     setError("Önceki hafta planı kopyalanırken bir hata oluştu.");
+      setError("Önceki hafta planı kopyalanırken bir hata oluştu.");
     }
   }
 
- // Save the current plan
   async function save() {
+    if (isHistorical) {
+      setError("Geçmiş modunda haftalık plan kaydetme kapalıdır.");
+      return;
+    }
     if (!id || !weekStart) return;
-   setSaving(true);
+    setSaving(true);
     setError(null);
     setNotice(null);
     try {
-      // Build payload; empty strings should be sent as null
-     const payload: any = {
+      const payload: any = {
         weekStartDate: weekStart,
         shiftTemplateId: weekTemplateId !== "NONE" ? weekTemplateId : null,
       };
 
       dayKeys.forEach((key) => {
         const mode = dayMode[key];
-        // Template override: send day template id, keep times null (server will derive)
         if (mode && mode !== "DEFAULT" && mode !== "CUSTOM") {
           payload[`${key}ShiftTemplateId`] = mode;
           payload[`${key}Start`] = null;
           payload[`${key}End`] = null;
           return;
         }
-        // Default: inherit week template (or policy). Keep everything null.
         if (mode === "DEFAULT") {
           payload[`${key}ShiftTemplateId`] = null;
           payload[`${key}Start`] = null;
           payload[`${key}End`] = null;
           return;
         }
-        // Custom: send explicit times
         const startKey = `${key}Start` as keyof TimesState;
         const endKey = `${key}End` as keyof TimesState;
         payload[`${key}ShiftTemplateId`] = null;
@@ -806,13 +973,13 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify(payload),
-     });
+      });
       if (!res.ok) {
         const txt = await res.text().catch(() => res.statusText);
         throw new Error(txt || "Failed to save");
       }
-      // Reload plan after save to reflect normalization (server may coerce undefined -> null)
       await loadPlan();
+      await loadWeekResolvedShifts();
       setNotice("Plan kaydedildi.");
       setIsDirty(false);
     } catch (e: any) {
@@ -822,32 +989,38 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
     }
   }
 
-  // Change week by delta weeks (-1 for previous, +1 for next)
   function changeWeek(delta: number) {
+    if (isHistorical) return;
     const newWeek = addDays(weekStart, delta * 7, timezone);
-   setWeekStart(newWeek);
+    setWeekStart(newWeek);
   }
 
-  // Load policy once on mount
   useEffect(() => {
     loadPolicy();
     loadTemplates();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // When timezone is known/updated, normalize weekStart to Monday in that timezone.
-  // This prevents "Sunday" or "shifted day" issues on machines with different timezone settings.
   useEffect(() => {
+    if (isHistorical && lockedHistoricalWeekStart) {
+      setWeekStart(lockedHistoricalWeekStart);
+      setIsDirty(false);
+      return;
+    }
     setWeekStart(computeWeekStart(new Date(), timezone));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timezone]);
+    setIsDirty(false);
+  }, [timezone, isHistorical, lockedHistoricalWeekStart]);
 
-  // Reload plan whenever weekStart or id changes
   useEffect(() => {
     loadPlan();
-   // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, weekStart]);
 
-  // Auto-dismiss notice after a short delay
+  useEffect(() => {
+    loadWeekResolvedShifts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, weekStart]);
+
   useEffect(() => {
     if (!notice) return;
     const t = setTimeout(() => {
@@ -858,7 +1031,20 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
 
   return (
     <div className="grid gap-5 max-w-full min-w-0">
-      {error && (
+      <EmployeeDetailSubnav id={id} current="weekly-plan" />
+      <EmployeeHistoricalModeBanner history={historyMeta} />
+
+      {isHistorical ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+          <div className="font-semibold">Geçmiş haftalık plan görünümü</div>
+          <div className="mt-1 text-amber-800/90 dark:text-amber-200/90">
+            Bu ekran seçilen <span className="font-medium">as-of</span> tarihinin bulunduğu haftayı read-only olarak gösterir.
+            Geçmiş modunda kopyalama, template oluşturma, düzenleme ve kaydetme kapalıdır.
+          </div>
+        </div>
+      ) : null}
+
+      {error ? (
         <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -870,8 +1056,9 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
             </Button>
           </div>
         </div>
-      )}
-      {notice && (
+      ) : null}
+
+      {notice ? (
         <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-900/60 dark:bg-sky-950/40 dark:text-sky-200">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -883,23 +1070,50 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
             </Button>
           </div>
         </div>
-      )}
-      {/* Week selector and actions */}
+      ) : null}
+
       <div className="grid gap-5 lg:grid-cols-12 max-w-full min-w-0">
         <div className="lg:col-span-5 min-w-0">
           <Card
             title="Hafta"
-            description="Hafta seçimi ve hızlı işlemler"
-            right={isDirty ? <Badge tone="warn">Kaydedilmedi</Badge> : <Badge tone="muted">Güncel</Badge>}
+            description={
+              isHistorical
+                ? "Seçilen geçmiş bağlama göre sabitlenen hafta"
+                : "Hafta seçimi ve hızlı işlemler"
+            }
+            right={
+              isHistorical ? (
+                <Badge tone="warn">Read-only</Badge>
+              ) : isDirty ? (
+                <Badge tone="warn">Kaydedilmedi</Badge>
+              ) : (
+                <Badge tone="muted">Güncel</Badge>
+              )
+            }
           >
             <div className="flex flex-wrap items-center gap-2 min-w-0">
-              <Button variant="secondary" className="w-full sm:w-auto" onClick={() => changeWeek(-1)}>
+              <Button
+                variant="secondary"
+                className="w-full sm:w-auto"
+                onClick={() => changeWeek(-1)}
+                disabled={isHistorical}
+              >
                 <Icon>{I.ChevronL}</Icon> Önceki
               </Button>
-              <Button variant="secondary" className="w-full sm:w-auto" onClick={() => changeWeek(1)}>
+              <Button
+                variant="secondary"
+                className="w-full sm:w-auto"
+                onClick={() => changeWeek(1)}
+                disabled={isHistorical}
+              >
                 Sonraki <Icon>{I.ChevronR}</Icon>
               </Button>
-              <Button variant="secondary" className="w-full sm:w-auto" onClick={copyPreviousWeek}>
+              <Button
+                variant="secondary"
+                className="w-full sm:w-auto"
+                onClick={copyPreviousWeek}
+                disabled={isHistorical}
+              >
                 <Icon>{I.Copy}</Icon>
                 <span className="sm:hidden">Geçen hafta</span>
                 <span className="hidden sm:inline">Geçen haftayı kopyala</span>
@@ -920,8 +1134,29 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
         </div>
 
         <div className="lg:col-span-7 min-w-0">
-          <Card title="Hafta Varsayılan Template" description="Template seçimi ve arama">
+          <Card
+            title="Hafta Varsayılan Template"
+            description={
+              isHistorical
+                ? "Template ve arama alanları geçmiş modunda read-only görünür"
+                : "Template seçimi ve arama"
+            }
+            right={isHistorical ? <Badge tone="warn">Read-only</Badge> : null}
+          >
             <div className="grid gap-3 min-w-0">
+              {!hasOffTemplate ? (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span>
+                      OFF template bulunamadı. OFF günlerini seçebilmek için bir kez oluşturmalısın. Aynı işlem Shift Templates ekranından da yapılabilir.
+                    </span>
+                    <Button variant="secondary" onClick={ensureOffTemplate} disabled={isHistorical}>
+                      OFF template oluştur
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+
               <div className="grid gap-1.5">
                 <Label>Template ara</Label>
                 <div className="flex gap-2 min-w-0">
@@ -929,18 +1164,21 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
                     value={templateQuery}
                     onChange={(e) => setTemplateQuery(e.target.value)}
                     placeholder="Örn: 0900, 22:00, 0900-1700"
+                    disabled={isHistorical}
                   />
                   {templateQuery.trim() ? (
-                    <Button variant="secondary" onClick={() => setTemplateQuery("")}>
+                    <Button variant="secondary" onClick={() => setTemplateQuery("")} disabled={isHistorical}>
                       Temizle
                     </Button>
                   ) : null}
                 </div>
               </div>
+
               <div className="grid gap-1.5">
                 <Label>Varsayılan</Label>
                 <Select
                   value={weekTemplateId}
+                  disabled={isHistorical}
                   onChange={(e) => {
                     setWeekTemplateId(e.target.value);
                     setIsDirty(true);
@@ -955,31 +1193,18 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
                 </Select>
               </div>
 
-              {/* Week Summary Chips */}
               <div className="mt-1 flex flex-wrap items-center gap-2 min-w-0">
                 <span className="mr-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">Hafta Özeti</span>
-                <ChipButton
-                  onClick={() => onSummaryClick("WEEK")}
-                  title="DEFAULT ve Week Template seçili günler"
-                >
+                <ChipButton onClick={() => onSummaryClick("WEEK")} title="DEFAULT ve Week Template seçili günler">
                   <Icon>{I.Layers}</Icon> {weekSummary.weekTemplateDays} gün Week Template
                 </ChipButton>
-                <ChipButton
-                  onClick={() => onSummaryClick("POLICY")}
-                  title="DEFAULT ve Week Template yoksa (Policy fallback)"
-                >
+                <ChipButton onClick={() => onSummaryClick("POLICY")} title="DEFAULT ve Week Template yoksa (Policy fallback)">
                   <Icon>{I.Layers}</Icon> {weekSummary.policyDays} gün Policy
                 </ChipButton>
-                <ChipButton
-                  onClick={() => onSummaryClick("DAY_TEMPLATE")}
-                  title="Gün bazlı template seçili günler"
-                >
+                <ChipButton onClick={() => onSummaryClick("DAY_TEMPLATE")} title="Gün bazlı template seçili günler">
                   <Icon>{I.Pin}</Icon> {weekSummary.dayTemplateDays} gün Day Template
                 </ChipButton>
-                <ChipButton
-                  onClick={() => onSummaryClick("CUSTOM")}
-                  title="Gün bazlı custom saat girilen günler"
-                >
+                <ChipButton onClick={() => onSummaryClick("CUSTOM")} title="Gün bazlı custom saat girilen günler">
                   <Icon>{I.Pencil}</Icon> {weekSummary.customDays} gün Custom
                 </ChipButton>
                 <ChipButton
@@ -987,8 +1212,9 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
                   title="Gece vardiyası (+1)"
                   className="dark:border-zinc-700"
                 >
-                  <span className="hidden dark:inline-flex"><Icon>{I.Moon}</Icon></span>
-                  <span className="inline-flex dark:hidden"><Icon>{I.Moon}</Icon></span>
+                  <span className="inline-flex">
+                    <Icon>{I.Moon}</Icon>
+                  </span>
                   {weekSummary.overnightDays} gün Gece
                 </ChipButton>
               </div>
@@ -996,8 +1222,15 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
           </Card>
         </div>
       </div>
-      {/* Times input grid */}
-     <Card title="Vardiya Saatleri" description="Gün bazında template veya custom saat girin">
+
+      <Card
+        title="Vardiya Saatleri"
+        description={
+          isHistorical
+            ? "Geçmiş haftaya ait plan ve efektif vardiya görünümü"
+            : "Gün bazında template veya custom saat girin"
+        }
+      >
         {loadingPlan ? (
           <div className="text-sm text-zinc-500 dark:text-zinc-400">Yükleniyor…</div>
         ) : (
@@ -1025,18 +1258,23 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
                   const mode = dayMode[key];
                   const startKey = `${key}Start` as keyof TimesState;
                   const endKey = `${key}End` as keyof TimesState;
-                  // Day is template-driven if:
-                  // 1) explicit day template override selected OR
-                  // 2) day is DEFAULT but weekTemplateId is set (Default -> Week Template)
                   const isExplicitDayTemplate = !!mode && mode !== "DEFAULT" && mode !== "CUSTOM";
                   const isWeekTemplateDefault = mode === "DEFAULT" && weekTemplateId !== "NONE";
-                  const isTemplateDriven = isExplicitDayTemplate || isWeekTemplateDefault;  
+                  const isTemplateDriven = isExplicitDayTemplate || isWeekTemplateDefault;
                   const overnightByDayTemplate = isOvernightMode(mode);
                   const overnightByWeekTemplate =
-                    mode === "DEFAULT" && weekTemplateId !== "NONE"
-                      ? !!getWeekTemplate()?.spansMidnight
-                      : false;
-                  const isOvernight = overnightByDayTemplate || overnightByWeekTemplate;                
+                    mode === "DEFAULT" && weekTemplateId !== "NONE" ? !!getWeekTemplate()?.spansMidnight : false;
+                  const isOvernight = overnightByDayTemplate || overnightByWeekTemplate;
+                  const off = isOffDay(key, idx);
+
+                  const defaultOptionLabel = (() => {
+                    const isoDayKey = addDays(weekStart, idx, timezone);
+                    const r = weekResolvedMap[isoDayKey];
+                    const badge = r?.shiftBadge ? String(r.shiftBadge) : "";
+                    if (!badge || badge === "—") return getDefaultDayLabel();
+                    return `(Default → ${badge})`;
+                  })();
+
                   return (
                     <tr
                       key={key}
@@ -1061,14 +1299,15 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
                           ) : null}
                         </div>
                       </td>
+
                       <td className="border-b border-zinc-100 py-2 pr-4 dark:border-zinc-900/60">
                         <Select
                           value={mode}
+                          disabled={isHistorical}
                           onChange={(e) => {
                             const v = e.target.value;
                             setDayMode((prev) => ({ ...prev, [key]: v }));
                             setIsDirty(true);
-                            // Keep times state roughly aligned for a predictable Save
                             if (v !== "DEFAULT" && v !== "CUSTOM") {
                               const tpl = getTemplateById(v);
                               if (tpl) {
@@ -1090,7 +1329,7 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
                             }
                           }}
                         >
-                          <option value="DEFAULT">{getDefaultDayLabel()}</option>
+                          <option value="DEFAULT">{defaultOptionLabel}</option>
                           <option value="CUSTOM">Custom</option>
                           {getTemplatesForSelect(mode).map((t) => (
                             <option key={t.id} value={t.id}>
@@ -1098,36 +1337,66 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
                             </option>
                           ))}
                         </Select>
+
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+                          {(() => {
+                            const dayKey = addDays(weekStart, idx, timezone);
+                            const r = weekResolvedMap[dayKey];
+                            const badge = r?.shiftBadge ? String(r.shiftBadge) : "—";
+                            const src = trShiftSourceTR(r?.shiftSource);
+                            const txt = `Geçerli: ${badge} • Kaynak: ${src}`;
+                            return (
+                              <span title={dayKey ? `${dayKey} • ${txt}` : txt}>
+                                {loadingWeekResolved ? "Geçerli vardiya yükleniyor…" : txt}
+                              </span>
+                            );
+                          })()}
+                        </div>
                       </td>
+
                       <td className="border-b border-zinc-100 py-2 pr-4 dark:border-zinc-900/60">
-                        <Input
-                          type="time"
-                          value={getDisplayedTime(key, "start")}
-                          disabled={isTemplateDriven}
-                          onChange={(e) => {
-                            setDayMode((prev) => ({ ...prev, [key]: "CUSTOM" }));
-                            setTimes((prev) => ({ ...prev, [startKey]: e.target.value }));
-                            setIsDirty(true);
-                          }}
-                        />
+                        {off ? (
+                          <div className="h-10 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-sm font-medium text-zinc-600 flex items-center dark:border-zinc-800 dark:bg-zinc-900/40 dark:text-zinc-300">
+                            OFF
+                          </div>
+                        ) : (
+                          <Input
+                            type="time"
+                            value={getDisplayedTime(key, "start")}
+                            disabled={isHistorical || isTemplateDriven}
+                            onChange={(e) => {
+                              setDayMode((prev) => ({ ...prev, [key]: "CUSTOM" }));
+                              setTimes((prev) => ({ ...prev, [startKey]: e.target.value }));
+                              setIsDirty(true);
+                            }}
+                          />
+                        )}
                       </td>
+
                       <td className="border-b border-zinc-100 py-2 pr-4 dark:border-zinc-900/60">
-                        <Input
-                          type="time"
-                          value={getDisplayedTime(key, "end")}
-                          disabled={isTemplateDriven}
-                          onChange={(e) => {
-                            setDayMode((prev) => ({ ...prev, [key]: "CUSTOM" }));
-                            setTimes((prev) => ({ ...prev, [endKey]: e.target.value }));
-                            setIsDirty(true);
-                          }}
-                        />
+                        {off ? (
+                          <div className="h-10 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-sm font-medium text-zinc-600 flex items-center dark:border-zinc-800 dark:bg-zinc-900/40 dark:text-zinc-300">
+                            OFF
+                          </div>
+                        ) : (
+                          <Input
+                            type="time"
+                            value={getDisplayedTime(key, "end")}
+                            disabled={isHistorical || isTemplateDriven}
+                            onChange={(e) => {
+                              setDayMode((prev) => ({ ...prev, [key]: "CUSTOM" }));
+                              setTimes((prev) => ({ ...prev, [endKey]: e.target.value }));
+                              setIsDirty(true);
+                            }}
+                          />
+                        )}
                       </td>
-                      
+
                       <td className="border-b border-zinc-100 py-2 dark:border-zinc-900/60">
                         {isTemplateDriven ? (
                           <Button
                             type="button"
+                            disabled={isHistorical}
                             onClick={() => {
                               const currentStart = getDisplayedTime(key, "start");
                               const currentEnd = getDisplayedTime(key, "end");
@@ -1157,10 +1426,14 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
         )}
       </Card>
 
-      {/* Save bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-200/70 bg-white px-4 py-3 shadow-sm dark:border-zinc-800/70 dark:bg-zinc-950/40">
         <div className="text-sm text-zinc-600 dark:text-zinc-400">
-          {isDirty ? (
+          {isHistorical ? (
+            <span className="inline-flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-amber-500/90" />
+              Geçmiş modunda düzenleme kapalı. Bu hafta read-only görüntüleniyor.
+            </span>
+          ) : isDirty ? (
             <span className="inline-flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-amber-500/90" />
               Değişiklikler kaydedilmedi
@@ -1172,8 +1445,8 @@ const [timezone, setTimezone] = useState<string>("Europe/Istanbul");
             </span>
           )}
         </div>
-        <Button onClick={save} disabled={saving}>
-          {saving ? "Kaydediliyor…" : "Planı Kaydet"}
+        <Button onClick={save} disabled={saving || isHistorical}>
+          {isHistorical ? "Geçmiş Modu" : saving ? "Kaydediliyor…" : "Planı Kaydet"}
         </Button>
       </div>
     </div>

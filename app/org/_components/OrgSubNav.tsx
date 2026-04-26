@@ -10,6 +10,7 @@ export function OrgSubNav() {
 
   const items: Item[] = [
     { href: "/org", label: "Organizasyon", desc: "Şube / Kapı / Cihaz yönetimi" },
+    { href: "/org/location-assignments", label: "Toplu Lokasyon Atama", desc: "EmployeeOrgAssignment history-safe write path" },
     { href: "/org/branches/policy", label: "Şube Kural Atama", desc: "Branch → RuleSet (EMPLOYEE > BRANCH > DEFAULT)" },
   ];
 

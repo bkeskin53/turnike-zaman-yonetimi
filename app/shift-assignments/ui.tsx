@@ -19,12 +19,12 @@ function Badge({
   className?: string;
 }) {
   const map: Record<Tone, string> = {
-    neutral: "bg-zinc-100 text-zinc-700 ring-zinc-200/60",
-    info: "bg-sky-50 text-sky-700 ring-sky-200/60",
-    good: "bg-emerald-50 text-emerald-700 ring-emerald-200/60",
-    warn: "bg-amber-50 text-amber-900 ring-amber-200/60",
-    danger: "bg-rose-50 text-rose-800 ring-rose-200/60",
-    violet: "bg-violet-50 text-violet-800 ring-violet-200/60",
+    neutral: "bg-slate-100/90 text-slate-700 ring-slate-300/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]",
+    info: "bg-[linear-gradient(135deg,rgba(14,165,233,0.16),rgba(56,189,248,0.10))] text-sky-800 ring-sky-300/45 shadow-[0_8px_22px_rgba(14,165,233,0.12)]",
+    good: "bg-[linear-gradient(135deg,rgba(16,185,129,0.16),rgba(52,211,153,0.10))] text-emerald-800 ring-emerald-300/45 shadow-[0_8px_22px_rgba(16,185,129,0.12)]",
+    warn: "bg-[linear-gradient(135deg,rgba(245,158,11,0.18),rgba(251,191,36,0.10))] text-amber-900 ring-amber-300/45 shadow-[0_8px_22px_rgba(245,158,11,0.10)]",
+    danger: "bg-[linear-gradient(135deg,rgba(244,63,94,0.16),rgba(251,113,133,0.10))] text-rose-800 ring-rose-300/45 shadow-[0_8px_22px_rgba(244,63,94,0.10)]",
+    violet: "bg-[linear-gradient(135deg,rgba(99,102,241,0.18),rgba(139,92,246,0.10))] text-indigo-900 ring-indigo-300/45 shadow-[0_10px_24px_rgba(99,102,241,0.12)]",
   };
   return (
     <span
@@ -55,29 +55,29 @@ function Card({
   className?: string;
 }) {
   const toneBg: Record<Tone, string> = {
-    neutral: "from-white to-zinc-50/50",
-    info: "from-white to-sky-50/30",
-    good: "from-white to-emerald-50/30",
-    warn: "from-white to-amber-50/30",
-    danger: "from-white to-rose-50/30",
-    violet: "from-white to-violet-50/30",
+    neutral: "border-slate-200/60 from-white/96 via-slate-50/92 to-slate-100/88",
+    info: "border-sky-200/55 from-white/96 via-sky-50/88 to-cyan-50/78",
+    good: "border-emerald-200/55 from-white/96 via-emerald-50/88 to-teal-50/76",
+    warn: "border-amber-200/60 from-white/96 via-amber-50/88 to-orange-50/78",
+    danger: "border-rose-200/60 from-white/96 via-rose-50/88 to-pink-50/78",
+    violet: "border-indigo-200/60 from-white/96 via-indigo-50/88 to-violet-50/80",
   };
   return (
     <div
       className={cx(
-        "rounded-2xl border border-zinc-200/70 bg-gradient-to-b p-5 shadow-[0_1px_3px_rgba(0,0,0,0.05)] min-w-0 transition-all duration-300 hover:shadow-md",
+        "rounded-[26px] border bg-gradient-to-br p-5 shadow-[0_18px_45px_rgba(15,23,42,0.08)] min-w-0 transition-all duration-300 hover:shadow-[0_24px_55px_rgba(79,70,229,0.12)] backdrop-blur-sm",
         toneBg[tone],
         className
       )}
     >
       {title || subtitle || right ? (
-        <div className="mb-4 flex items-start justify-between gap-3 border-b border-zinc-100 pb-4">
+        <div className="mb-4 flex items-start justify-between gap-3 border-b border-white/70 pb-4">
           <div className="min-w-0">
             {title ? (
-              <div className="text-lg font-bold text-zinc-900 leading-tight tracking-tight">{title}</div>
+              <div className="text-lg font-bold text-slate-950 leading-tight tracking-tight">{title}</div>
             ) : null}
             {subtitle ? (
-              <div className="mt-1 text-sm text-zinc-500 font-medium leading-relaxed italic">{subtitle}</div>
+              <div className="mt-1 text-sm text-slate-600 font-medium leading-relaxed">{subtitle}</div>
             ) : null}
           </div>
           {right ? <div className="shrink-0">{right}</div> : null}
@@ -97,17 +97,17 @@ function Button({
     "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition-all active:scale-95 " +
     "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm";
   const map = {
-    primary: "bg-indigo-600 text-white hover:bg-indigo-700 border border-indigo-600/20",
-    secondary: "bg-white text-zinc-700 border border-zinc-200 hover:bg-zinc-50 hover:text-zinc-900",
-    ghost: "bg-transparent text-zinc-600 hover:bg-zinc-100 border border-transparent",
-    danger: "bg-rose-600 text-white hover:bg-rose-700 border border-rose-600/20",
+    primary: "border border-indigo-400/30 bg-[linear-gradient(135deg,#4f46e5,#7c3aed)] text-white shadow-[0_14px_28px_rgba(79,70,229,0.24)] hover:brightness-105",
+    secondary: "border border-slate-200/80 bg-white/88 text-slate-700 backdrop-blur-sm hover:border-indigo-200 hover:bg-indigo-50/50 hover:text-slate-950",
+    ghost: "bg-transparent text-slate-600 hover:bg-indigo-50/60 hover:text-indigo-700 border border-transparent",
+    danger: "border border-rose-300/30 bg-[linear-gradient(135deg,#e11d48,#f43f5e)] text-white shadow-[0_14px_28px_rgba(225,29,72,0.18)] hover:brightness-105",
   } as const;
   return <button className={cx(base, map[variant], className)} {...props} />;
 }
 
 const inputClass =
-  "w-full rounded-xl border border-zinc-200 bg-white/80 px-3 py-2.5 text-sm shadow-sm font-medium transition-all " +
-  "focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white";
+  "w-full rounded-xl border border-slate-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(248,250,252,0.92))] px-3 py-2.5 text-sm shadow-[0_10px_26px_rgba(15,23,42,0.05)] font-medium text-slate-800 transition-all " +
+  "placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-300 focus:bg-white";
 
 type Employee = {
   id: string;
@@ -148,7 +148,8 @@ function nameOf(e: Employee) {
   return `${e.firstName ?? ""} ${e.lastName ?? ""}`.trim();
 }
 
-export default function ShiftAssignmentsClient() {
+export default function ShiftAssignmentsClient({ canWrite }: { canWrite: boolean }) {
+  const readOnly = !canWrite;
   const [weekStartDate, setWeekStartDate] = useState(getThisWeeksMondayISO);
   const [shiftTemplateId, setShiftTemplateId] = useState<string>("");
   const [search, setSearch] = useState<string>("");
@@ -290,6 +291,7 @@ export default function ShiftAssignmentsClient() {
   }, [pageEmployees, selected]);
 
   function toggleAllVisible(next: boolean) {
+    if (readOnly) return;
     setSelected((prev) => {
       const copy = { ...prev };
       for (const e of pageEmployees) copy[e.id] = next;
@@ -311,6 +313,7 @@ export default function ShiftAssignmentsClient() {
   }
 
   function toggleOne(id: string) {
+    if (readOnly) return;
     setSelected((prev) => ({
       ...prev,
       [id]: !prev[id],
@@ -361,6 +364,7 @@ export default function ShiftAssignmentsClient() {
   }, [weekStartDate, isWeekStartMonday]);
 
   async function submit() {
+    if (readOnly) return;
     setSubmitting(true);
     setError(null);
     setNotice(null);
@@ -430,7 +434,7 @@ export default function ShiftAssignmentsClient() {
       >
         {error && (
           <div
-            className="pointer-events-auto flex items-start justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-red-800 shadow-[0_10px_25px_rgba(0,0,0,0.12)]"
+            className="pointer-events-auto flex items-start justify-between gap-3 rounded-xl border border-rose-200/80 bg-[linear-gradient(135deg,rgba(255,241,242,0.96),rgba(255,255,255,0.94))] px-3 py-2 text-rose-800 shadow-[0_16px_36px_rgba(244,63,94,0.12)]"
           >
             <div className="text-sm leading-[18px] whitespace-pre-wrap">
               {error}
@@ -448,7 +452,7 @@ export default function ShiftAssignmentsClient() {
 
         {notice && (
           <div
-            className="pointer-events-auto flex items-start justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-800 shadow-[0_10px_25px_rgba(0,0,0,0.12)]"
+            className="pointer-events-auto flex items-start justify-between gap-3 rounded-xl border border-emerald-200/80 bg-[linear-gradient(135deg,rgba(236,253,245,0.96),rgba(255,255,255,0.94))] px-3 py-2 text-emerald-800 shadow-[0_16px_36px_rgba(16,185,129,0.10)]"
           >
             <div className="text-sm leading-[18px] whitespace-pre-wrap">
               {notice}
@@ -473,6 +477,7 @@ export default function ShiftAssignmentsClient() {
             <Badge tone="violet">Stage 4 • WEEK_TEMPLATE</Badge>
             {loading ? <Badge tone="info">Yükleniyor…</Badge> : null}
             {loadingWeek ? <Badge tone="info">Hafta okunuyor…</Badge> : null}
+            {readOnly ? <Badge tone="warn">Read-only</Badge> : null}
           </div>
         }
         subtitle={
@@ -489,7 +494,7 @@ export default function ShiftAssignmentsClient() {
             <Button
               variant="secondary"
               onClick={selectNoWeekPlansVisible}
-              disabled={loadingWeek || filteredEmployees.length === 0}
+              disabled={readOnly || loadingWeek || filteredEmployees.length === 0}
               title={loadingWeek ? "Hafta bilgileri yükleniyor..." : "Görünen listede haftası olmayanları seç"}
             >
               Bu haftası olmayanları seç
@@ -497,12 +502,17 @@ export default function ShiftAssignmentsClient() {
           </div>
         }
       >
+        {readOnly ? (
+          <div className="mb-4 rounded-xl border border-amber-200/80 bg-[linear-gradient(135deg,rgba(254,243,199,0.96),rgba(255,255,255,0.94))] px-3 py-2 text-sm font-semibold text-amber-900 shadow-[0_10px_24px_rgba(245,158,11,0.06)]">
+            İnceleme modu: toplu atama yapamazsın. Listeleme/filtreleme serbesttir.
+          </div>
+        ) : null}
         <div className="grid gap-4">
           {/* Row 1 */}
           <div className="grid gap-4 md:grid-cols-2 lg:flex lg:items-start lg:justify-between">
             <div className="flex flex-wrap items-start gap-3">
               <label className="grid gap-1.5">
-                <span className="text-[11px] font-bold text-zinc-400 uppercase ml-1 tracking-wider">Hafta (Pzt)</span>
+                <span className="text-[11px] font-bold text-slate-400 uppercase ml-1 tracking-wider">Hafta (Pzt)</span>
                 <input
                   type="date"
                   value={weekStartDate}
@@ -512,6 +522,7 @@ export default function ShiftAssignmentsClient() {
                     setNotice(null);
                   }}
                   className={cx(inputClass, "w-[170px]")}
+                  disabled={loading || submitting}
                 />
                 <div
                   className="mt-0.5 h-4 text-[11px] leading-4 text-rose-700 font-semibold"
@@ -522,11 +533,12 @@ export default function ShiftAssignmentsClient() {
               </label>
 
               <label className="grid gap-1.5 min-w-[240px] flex-1">
-                <span className="text-[11px] font-bold text-zinc-400 uppercase ml-1 tracking-wider">Week Template</span>
+                <span className="text-[11px] font-bold text-slate-400 uppercase ml-1 tracking-wider">Week Template</span>
                 <select
                   value={shiftTemplateId}
                   onChange={(e) => setShiftTemplateId(e.target.value)}
                   className={inputClass}
+                  disabled={loading || submitting || readOnly}
                 >
                   <option value="" disabled>
                     Seç...
@@ -547,17 +559,18 @@ export default function ShiftAssignmentsClient() {
           {/* Row 2 */}
           <div className="grid gap-3 md:grid-cols-2 lg:flex lg:items-end lg:gap-3">
             <label className="grid flex-1 gap-1.5 min-w-[260px]">
-              <span className="text-[11px] font-bold text-zinc-400 uppercase ml-1 tracking-wider">Arama</span>
+              <span className="text-[11px] font-bold text-slate-400 uppercase ml-1 tracking-wider">Arama</span>
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Kod / Ad"
                 className={inputClass}
+                disabled={loading}
               />
             </label>
             
             <div className="grid gap-1.5">
-              <span className="text-[11px] font-bold text-zinc-400 uppercase ml-1 tracking-wider">Sayfa</span>
+              <span className="text-[11px] font-bold text-slate-400 uppercase ml-1 tracking-wider">Sayfa</span>
               <select
                 className={cx(inputClass, "w-28")}
                 value={String(pageSize)}
@@ -572,7 +585,7 @@ export default function ShiftAssignmentsClient() {
             </div>
 
             <label
-              className="inline-flex select-none items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm font-semibold text-zinc-700 shadow-sm"
+              className="inline-flex select-none items-center gap-2 rounded-xl border border-slate-200/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(248,250,252,0.92))] px-3 py-2.5 text-sm font-semibold text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.05)]"
               title="Kapalıysa pasif personeller de listede görünür"
             >
               <input
@@ -580,12 +593,13 @@ export default function ShiftAssignmentsClient() {
                 checked={onlyActive}
                 onChange={(e) => setOnlyActive(e.target.checked)}
                 className="h-4 w-4 rounded-md border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+                disabled={loading}
               />
               Sadece aktifleri göster
             </label>
 
             <div className="lg:ml-auto flex items-center gap-2">
-              <div className="text-sm font-medium text-zinc-500 whitespace-nowrap">
+              <div className="text-sm font-medium text-slate-500 whitespace-nowrap">
                 {loading ? "Yükleniyor…" : `Toplam: ${totalCount}`}
               </div>
             </div>
@@ -605,9 +619,9 @@ export default function ShiftAssignmentsClient() {
         }
         subtitle="Satıra tıklayarak seçim yapın. Checkbox ile de seçebilirsiniz."
       >
-        <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white">
+        <div className="overflow-x-auto rounded-2xl border border-slate-200/75 bg-white/88 shadow-[0_18px_38px_rgba(15,23,42,0.06)] backdrop-blur-sm">
           <table className="min-w-[920px] w-full text-sm">
-            <thead className="bg-zinc-50 text-zinc-700">
+            <thead className="bg-[linear-gradient(180deg,rgba(232,238,252,0.98),rgba(244,247,252,0.96))] text-slate-700 sticky top-0 z-10">
               <tr>
                 <th className="w-12 px-4 py-4 text-center">
                   <input
@@ -616,38 +630,43 @@ export default function ShiftAssignmentsClient() {
                     onChange={(e) => toggleAllVisible(e.target.checked)}
                     className="rounded-md border-zinc-300 text-indigo-600 focus:ring-indigo-500"
                     title="Görünenlerin tümünü seç/kaldır"
+                    disabled={readOnly || loading || submitting || pageEmployees.length === 0}
                   />
                 </th>
-                <th className="w-[160px] px-4 py-4 text-left font-bold text-zinc-500 uppercase text-[11px] tracking-widest">
+                <th className="w-[160px] px-4 py-4 text-left font-bold text-slate-500 uppercase text-[11px] tracking-widest">
                   Code
                 </th>
-                <th className="px-4 py-4 text-left font-bold text-zinc-500 uppercase text-[11px] tracking-widest">
+                <th className="px-4 py-4 text-left font-bold text-slate-500 uppercase text-[11px] tracking-widest">
                   Name
                 </th>
-                <th className="px-4 py-4 text-left font-bold text-zinc-500 uppercase text-[11px] tracking-widest">
+                <th className="px-4 py-4 text-left font-bold text-slate-500 uppercase text-[11px] tracking-widest">
                   Mevcut Week
                 </th>
-                <th className="w-[140px] px-4 py-4 text-center font-bold text-zinc-500 uppercase text-[11px] tracking-widest">
+                <th className="w-[140px] px-4 py-4 text-center font-bold text-slate-500 uppercase text-[11px] tracking-widest">
                   Status
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-100">
+            <tbody className="divide-y divide-slate-100/90">
               {pageEmployees.map((e) => (
                 <tr
                   key={e.id}
                   className={cx(
-                    "group cursor-pointer hover:bg-zinc-50/70 transition-colors",
-                    selected[e.id] ? "bg-zinc-50" : "bg-white"
+                    "group cursor-pointer transition-colors",
+                    selected[e.id]
+                      ? "bg-[linear-gradient(90deg,rgba(238,242,255,0.85),rgba(248,250,252,0.9))]"
+                      : "bg-white/88 hover:bg-[linear-gradient(90deg,rgba(248,250,252,0.92),rgba(238,242,255,0.60))]",
                   )}
                   tabIndex={0}
                   title="Satıra tıklayarak seçimi aç/kapat"
                   onClick={(ev) => {
+                    if (readOnly) return;
                     const target = ev.target as HTMLElement | null;
                     if (target?.closest("input")) return;
                     toggleOne(e.id);
                   }}
                   onKeyDown={(ev) => {
+                    if (readOnly) return;
                     if (ev.key === "Enter" || ev.key === " ") {
                       ev.preventDefault();
                       toggleOne(e.id);
@@ -665,18 +684,19 @@ export default function ShiftAssignmentsClient() {
                         }))
                       }
                       className="rounded-md border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+                      disabled={readOnly || submitting}
                     />
                   </td>
-                  <td className="px-4 py-3 font-mono font-bold text-zinc-700">{e.employeeCode}</td>
+                  <td className="px-4 py-3 font-mono font-bold text-slate-700">{e.employeeCode}</td>
                   <td className="px-4 py-3">
-                    <span className="font-semibold text-zinc-900">{nameOf(e)}</span>
+                    <span className="font-semibold text-slate-950">{nameOf(e)}</span>
                   </td>
                   <td className="px-4 py-3">
                     {loadingWeek ? (
-                      <span className="text-zinc-500">...</span>
+                      <span className="text-slate-500">...</span>
                     ) : (() => {
                       const tplId = weekTemplateByEmployeeId[e.id] ?? null;
-                      if (!tplId) return <span className="text-zinc-500">—</span>;
+                      if (!tplId) return <span className="text-slate-500">—</span>;
                       const label =
                         (weekTemplateLabelByEmployeeId[e.id] ?? null) ??
                         (templateLabelById[tplId] ?? tplId);
@@ -685,7 +705,7 @@ export default function ShiftAssignmentsClient() {
                         <span className="inline-flex items-center gap-2 min-w-0">
                           <span
                             title={label}
-                            className="inline-block max-w-[420px] truncate rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-xs font-semibold text-zinc-700"
+                            className="inline-block max-w-[420px] truncate rounded-full border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.95),rgba(248,250,252,0.92))] px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-[0_6px_18px_rgba(15,23,42,0.04)]"
                           >
                             {label}
                           </span>
@@ -701,7 +721,7 @@ export default function ShiftAssignmentsClient() {
               ))}
               {pageEmployees.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-zinc-600">
+                  <td colSpan={5} className="px-4 py-8 text-slate-600">
                     Kayıt yok.
                   </td>
                 </tr>
@@ -712,9 +732,9 @@ export default function ShiftAssignmentsClient() {
 
         {/* Pagination */}
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-          <div className="text-sm text-zinc-600">
-            Sayfa <span className="font-medium text-zinc-900">{page}</span> /{" "}
-            <span className="font-medium text-zinc-900">{totalPages}</span>
+          <div className="text-sm text-slate-600">
+            Sayfa <span className="font-medium text-slate-950">{page}</span> /{" "}
+            <span className="font-medium text-slate-950">{totalPages}</span>
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -751,7 +771,7 @@ export default function ShiftAssignmentsClient() {
             <Button
               variant="primary"
               onClick={submit}
-              disabled={!canSubmit}
+              disabled={readOnly || !canSubmit}
               title={!canSubmit ? "Seçim + Pazartesi + template gerekli" : "Seçili personele haftalık atamayı uygula"}
               className="min-w-[140px]"
             >
@@ -761,15 +781,18 @@ export default function ShiftAssignmentsClient() {
             <Button
               variant="secondary"
               type="button"
-              onClick={() => setSelected({})}
-              disabled={submitting || selectedIds.length === 0}
+              onClick={() => {
+                if (readOnly) return;
+                setSelected({});
+              }}
+              disabled={readOnly || submitting || selectedIds.length === 0}
               title={selectedIds.length === 0 ? "Seçili personel yok" : "Tüm seçimleri kaldır"}
             >
               Seçimi temizle
             </Button>
 
             <label
-              className="inline-flex select-none items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm font-semibold text-zinc-700 shadow-sm"
+              className="inline-flex select-none items-center gap-2 rounded-xl border border-slate-200/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(248,250,252,0.92))] px-3 py-2.5 text-sm font-semibold text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.05)]"
               title="Aynı template olanlara yazmaz (idempotent)."
             >
               <input
@@ -777,6 +800,7 @@ export default function ShiftAssignmentsClient() {
                 checked={onlyChanged}
                 onChange={(e) => setOnlyChanged(e.target.checked)}
                 className="h-4 w-4 rounded-md border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+                disabled={submitting || readOnly}
               />
               Sadece değişecekleri uygula
             </label>
@@ -793,8 +817,8 @@ export default function ShiftAssignmentsClient() {
               className={cx(
                 "h-9 rounded-full border px-3 text-xs font-semibold transition",
                 showSelectedOnly
-                  ? "border-zinc-900 bg-zinc-900 text-white"
-                  : "border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100",
+                  ? "border-indigo-500/30 bg-[linear-gradient(135deg,#4338ca,#6366f1)] text-white shadow-[0_12px_24px_rgba(79,70,229,0.18)]"
+                  : "border-slate-200/80 bg-slate-50/90 text-slate-700 hover:bg-slate-100",
                 "disabled:cursor-not-allowed disabled:opacity-60"
               )}
               title={
@@ -811,20 +835,20 @@ export default function ShiftAssignmentsClient() {
 
             {onlyChanged ? (
               <span
-                className="h-9 inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold text-zinc-700"
+                className="h-9 inline-flex items-center rounded-full border border-amber-200/80 bg-amber-50/90 px-3 text-xs font-semibold text-amber-900 shadow-[0_8px_20px_rgba(245,158,11,0.06)]"
                 title="Mevcut week template farklı olanlar"
               >
                 Değişecek <span className="ml-1 font-bold">{changeCandidateIds.length}</span>
               </span>
             ) : null}
 
-            <span className="h-9 inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold text-zinc-700">
+            <span className="h-9 inline-flex items-center rounded-full border border-indigo-200/70 bg-indigo-50/85 px-3 text-xs font-semibold text-indigo-800 shadow-[0_8px_20px_rgba(99,102,241,0.06)]">
               Template <span className="ml-1 font-bold">{shiftTemplateId ? "Seçili" : "—"}</span>
             </span>
           </div>
         </div>
 
-        <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
+        <div className="mt-3 rounded-xl border border-slate-200/75 bg-[linear-gradient(180deg,rgba(248,250,252,0.94),rgba(255,255,255,0.92))] px-3 py-2 text-xs text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
           Not: Bu işlem günlük override'ları etkilemez. (Day Template / Custom / Manual her zaman üst katmandır.)
         </div>
       </Card>  

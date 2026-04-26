@@ -3,6 +3,7 @@ import { DateTime } from "luxon";
 import { getSessionOrNull } from "@/src/auth/guard";
 import { getActiveCompanyId, getCompanyBundle } from "@/src/services/company.service";
 import { buildDailyReportItems } from "@/src/services/reports/dailyReport.service";
+import { getEmployeeScopeWhereForSession } from "@/src/auth/scope";
 
 function asISODate(d: string | null) {
   if (!d) return null;
@@ -52,7 +53,8 @@ export async function GET(req: Request) {
   const { company, policy } = await getCompanyBundle();
   const tz = policy.timezone || "Europe/Istanbul";
 
-  const items = await buildDailyReportItems({ companyId, date, tz, policy });
+  const employeeScopeWhere = await getEmployeeScopeWhereForSession(session);
+  const items = await buildDailyReportItems({ companyId, date, tz, policy, employeeWhere: employeeScopeWhere });
 
   const headers = [
     { key: "date", label: "Tarih" },

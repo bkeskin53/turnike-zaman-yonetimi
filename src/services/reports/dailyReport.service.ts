@@ -5,6 +5,7 @@ import { listDailyAttendance } from "@/src/repositories/attendance.repo";
 import { prisma } from "@/src/repositories/prisma";
 import { computeWeekStartUTC } from "@/src/services/shiftPlan.service";
 import { dbDateFromDayKey } from "@/src/utils/dayKey";
+import { Prisma } from "@prisma/client";
 
 function minuteToTime(min: number): string {
   const h = Math.floor(min / 60)
@@ -40,8 +41,9 @@ export async function buildDailyReportItems(params: {
   date: string; // YYYY-MM-DD
   tz: string;
   policy: any;
+  employeeWhere?: Prisma.EmployeeWhereInput | null;
 }): Promise<DailyReportItem[]> {
-  const { companyId, date, tz, policy } = params;
+  const { companyId, date, tz, policy, employeeWhere } = params;
 
   const policyStartMinute =
     typeof (policy as any).shiftStartMinute === "number" ? (policy as any).shiftStartMinute : null;
@@ -51,7 +53,7 @@ export async function buildDailyReportItems(params: {
   // workDate DB’de UTC midnight tutuluyor varsayımı
   const workDate = dbDateFromDayKey(date);
 
-  const rows = await listDailyAttendance(companyId, workDate);
+  const rows = await listDailyAttendance(companyId, workDate, employeeWhere ?? null);
   const employeeIds = Array.from(new Set(rows.map((r) => r.employeeId)));
 
   // ------------------------------------------------------------------
@@ -468,14 +470,24 @@ export async function buildDailyReportItems(params: {
       employeeCode: code,
       fullName,
       status: r.status,
+      requiresReview: (r as any).requiresReview ?? false,
+      reviewReasons: (r as any).reviewReasons ?? [],
+      reviewStatus: (r as any).reviewStatus ?? "NONE",
+      reviewedAt: (r as any).reviewedAt ?? null,
+      reviewedByUserId: (r as any).reviewedByUserId ?? null,
+      reviewNote: (r as any).reviewNote ?? null,
 
       firstIn: r.firstIn,
       lastOut: r.lastOut,
 
       workedMinutes: r.workedMinutes,
+      scheduledWorkedMinutes: (r as any).scheduledWorkedMinutes ?? 0,
+      unscheduledWorkedMinutes: (r as any).unscheduledWorkedMinutes ?? 0,
       lateMinutes: r.lateMinutes,
       earlyLeaveMinutes: r.earlyLeaveMinutes,
       overtimeMinutes: (r as any).overtimeMinutes ?? 0,
+      scheduledOvertimeMinutes: (r as any).scheduledOvertimeMinutes ?? 0,
+      unscheduledOvertimeMinutes: (r as any).unscheduledOvertimeMinutes ?? 0,
       overtimeEarlyMinutes: (r as any).overtimeEarlyMinutes ?? 0,
       overtimeLateMinutes: (r as any).overtimeLateMinutes ?? 0,
       // Enterprise: OT Dynamic Break meta (engine output)
@@ -483,6 +495,7 @@ export async function buildDailyReportItems(params: {
       otBreakDeductMinutes: (r as any).otBreakDeductMinutes ?? 0,
 
       anomalies: r.anomalies ?? [],
+      anomalyMeta: (r as any).anomalyMeta ?? null,
     };
 
     // Policy meta (runtime transparency)

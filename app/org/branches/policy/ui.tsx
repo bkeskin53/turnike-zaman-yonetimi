@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { OrgSubNav } from "@/app/org/_components/OrgSubNav";
 
-export default function BranchPolicyClient() {
+export default function BranchPolicyClient(props: { canWrite: boolean }) {
+  const { canWrite } = props;
   const [branches, setBranches] = useState<Array<any>>([]);
   const [ruleSets, setRuleSets] = useState<Array<any>>([]);
   const [savingBranchId, setSavingBranchId] = useState<string>("");
@@ -28,6 +29,9 @@ export default function BranchPolicyClient() {
   }, [ruleSets]);
 
   async function setBranchRuleSet(branchId: string, value: string) {
+    if (!canWrite) {
+      return; // RBAC: read-only users must not trigger POST (avoid forbidden toast/flash)
+    }
     setSavingBranchId(branchId);
     try {
       if (value === "DEFAULT") {
@@ -61,6 +65,22 @@ export default function BranchPolicyClient() {
         </p>
       </div>
 
+      {!canWrite ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-amber-900">Read-only</div>
+              <div className="mt-1 text-sm text-amber-800">
+                Bu ekranda değişiklik yapma yetkin yok. Seçimler kilitli; sadece görüntüleyebilirsin.
+              </div>
+            </div>
+            <span className="shrink-0 rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-900">
+              Yetki: Yok
+            </span>
+          </div>
+        </div>
+      ) : null}
+
       <div className="rounded-xl border border-zinc-200 bg-white p-4">
         <div className="grid gap-3">
           {branches.map((b) => {
@@ -79,7 +99,7 @@ export default function BranchPolicyClient() {
                     className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
                     value={current}
                     onChange={(e) => setBranchRuleSet(b.id, e.target.value)}
-                    disabled={savingBranchId === b.id}
+                    disabled={!canWrite || savingBranchId === b.id}
                   >
                     {ruleSetOptions.map((rs) => (
                       <option key={rs.id} value={rs.id}>

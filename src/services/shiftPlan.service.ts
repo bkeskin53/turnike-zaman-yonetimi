@@ -2,11 +2,15 @@ import { DateTime } from "luxon";
 import { getCompanyBundle } from "@/src/services/company.service";
 import {
   findWeeklyShiftPlan,
+  findWeeklyShiftPlansForEmployees as findWeeklyShiftPlansForEmployeesRepo,
   upsertWeeklyShiftPlan,
 } from "@/src/repositories/shiftPlan.repo";
 import { getShiftTemplateById } from "@/src/services/shiftTemplate.service";
 import { findShiftTemplateBySignature } from "@/src/repositories/shiftTemplate.repo";
-import { resolveWorkScheduleShiftForEmployeeOnDate } from "@/src/services/workSchedule.service";
+import {
+  resolveWorkScheduleShiftForEmployeeOnDate,
+  type WorkScheduleResolved,
+} from "@/src/services/workSchedule.service";
 
 /**
  * Compute the UTC week start (Monday 00:00) for a given ISO date string and timezone.
@@ -39,6 +43,37 @@ export type ResolvedShift = {
   shiftTemplateId?: string | null;
   isOffDay?: boolean;
 };
+
+function isOffShiftTemplate(tpl: any): boolean {
+  if (!tpl || typeof tpl !== "object") return false;
+
+  // Preferred explicit semantic flag
+  if ((tpl as any).isOffDay === true) return true;
+
+  // Backward-compatible semantic identifiers
+  const signature = String((tpl as any).signature ?? "").trim().toUpperCase();
+  const shiftCode = String((tpl as any).shiftCode ?? "").trim().toUpperCase();
+
+  if (signature === "OFF") return true;
+  if (shiftCode === "OFF") return true;
+
+  return false;
+}
+
+function buildOffResolvedShift(source: ShiftSource, tpl?: any): ResolvedShift {
+  return {
+    source,
+    shiftCode: (tpl as any)?.shiftCode ?? null,
+    shiftTemplateId: (tpl as any)?.id ?? null,
+    isOffDay: true,
+    signature: {
+      startTime: "--:--",
+      endTime: "--:--",
+      spansMidnight: false,
+      signature: "OFF",
+    },
+  };
+}
 
 function normalizeTime(value: string): string {
   const [h, m] = value.split(":").map((v) => v.padStart(2, "0"));
@@ -75,7 +110,12 @@ export function buildShiftSignature(startTimeRaw: string, endTimeRaw: string): S
  */
 export async function resolveShiftForEmployeeOnDate(
   employeeId: string,
-  date: string
+  date: string,
+  employeeContext?: {
+    employeeGroupId: string | null;
+    employeeSubgroupId: string | null;
+    branchId: string | null;
+  } | null,
 ): Promise<ResolvedShift> {
   // Defensive normalize: avoid Prisma throwing when employeeId/date is missing/invalid.
   const empId = String(employeeId ?? "").trim();
@@ -145,6 +185,10 @@ export async function resolveShiftForEmployeeOnDate(
     if (dayTplId) {
       const tpl = await getShiftTemplateById(company.id, dayTplId);
       if (tpl) {
+        if (isOffShiftTemplate(tpl)) {
+          return buildOffResolvedShift("DAY_TEMPLATE", tpl);
+        }
+
         return {
           source: "DAY_TEMPLATE",
           shiftCode: (tpl as any).shiftCode ?? tpl.signature,
@@ -170,6 +214,10 @@ export async function resolveShiftForEmployeeOnDate(
     if (plan.shiftTemplateId) {
       const tpl = await getShiftTemplateById(company.id, plan.shiftTemplateId);
       if (tpl) {
+        if (isOffShiftTemplate(tpl)) {
+          return buildOffResolvedShift("WEEK_TEMPLATE", tpl);
+        }
+
         return {
           source: "WEEK_TEMPLATE",
           shiftCode: (tpl as any).shiftCode ?? tpl.signature,
@@ -191,6 +239,14 @@ export async function resolveShiftForEmployeeOnDate(
       employeeId: empId,
       dayKey,
       timezone: tz,
+      employeeContext: employeeContext
+        ? {
+            id: empId,
+            employeeGroupId: employeeContext.employeeGroupId,
+            employeeSubgroupId: employeeContext.employeeSubgroupId,
+            branchId: employeeContext.branchId,
+          }
+        : null,
     });
     if (ws) {
       if (ws.kind === "OFF") {
@@ -240,6 +296,331 @@ export type ResolvedShiftMinutes = {
   endMinute?: number;
   isOffDay?: boolean;
 };
+
+/**
+ * Batch helper used by recompute paths to avoid weeklyShiftPlan N+1.
+ * (keeps existing callsites intact; this is an opt-in helper)
+ */
+export async function findWeeklyShiftPlansForEmployees(
+  companyId: string,
+  employeeIds: string[],
+  weekStartDate: Date
+) {
+  return findWeeklyShiftPlansForEmployeesRepo(companyId, employeeIds, weekStartDate);
+}
+
+// Minimal shape we use from prisma.weeklyShiftPlan
+type WeeklyShiftPlanRow = {
+  employeeId: string;
+  shiftTemplateId?: string | null;
+  monShiftTemplateId?: string | null;
+  tueShiftTemplateId?: string | null;
+  wedShiftTemplateId?: string | null;
+  thuShiftTemplateId?: string | null;
+  friShiftTemplateId?: string | null;
+  satShiftTemplateId?: string | null;
+  sunShiftTemplateId?: string | null;
+  monStartMinute?: number | null;
+  monEndMinute?: number | null;
+  tueStartMinute?: number | null;
+  tueEndMinute?: number | null;
+  wedStartMinute?: number | null;
+  wedEndMinute?: number | null;
+  thuStartMinute?: number | null;
+  thuEndMinute?: number | null;
+  friStartMinute?: number | null;
+  friEndMinute?: number | null;
+  satStartMinute?: number | null;
+  satEndMinute?: number | null;
+  sunStartMinute?: number | null;
+  sunEndMinute?: number | null;
+} | null;
+
+/**
+ * Cached/Injected-plan resolver for hot paths (recompute).
+ * Same precedence/behavior as resolveShiftForEmployeeOnDate but WITHOUT querying weeklyShiftPlan.
+ *
+ * IMPORTANT: This does NOT change rules, only eliminates DB roundtrips for weeklyShiftPlan.
+ */
+async function resolveShiftForEmployeeOnDateUsingWeeklyPlan(args: {
+  companyId: string;
+  employeeId: string;
+  dayKey: string;
+  timezone: string;
+  policy: any;
+  weeklyPlan: WeeklyShiftPlanRow;
+  workSchedule?: WorkScheduleResolved | null;
+}): Promise<ResolvedShift> {
+  const empId = String(args.employeeId ?? "").trim();
+  const dayKey = String(args.dayKey ?? "").trim();
+  if (!empId || !dayKey) {
+    return {
+      source: "POLICY",
+      shiftCode: null,
+      shiftTemplateId: null,
+      signature: { startTime: "--:--", endTime: "--:--", spansMidnight: false, signature: "—" },
+    };
+  }
+
+  const tz = args.timezone || "Europe/Istanbul";
+  const dayIndex = DateTime.fromISO(dayKey, { zone: tz }).weekday; // 1..7
+
+  const plan = args.weeklyPlan;
+
+  let dayTplId: string | null | undefined;
+  let start: number | null | undefined;
+  let end: number | null | undefined;
+
+  if (plan) {
+    switch (dayIndex) {
+      case 1:
+        dayTplId = plan.monShiftTemplateId;
+        start = plan.monStartMinute;
+        end = plan.monEndMinute;
+        break;
+      case 2:
+        dayTplId = plan.tueShiftTemplateId;
+        start = plan.tueStartMinute;
+        end = plan.tueEndMinute;
+        break;
+      case 3:
+       dayTplId = plan.wedShiftTemplateId;
+        start = plan.wedStartMinute;
+        end = plan.wedEndMinute;
+        break;
+      case 4:
+        dayTplId = plan.thuShiftTemplateId;
+        start = plan.thuStartMinute;
+       end = plan.thuEndMinute;
+        break;
+      case 5:
+        dayTplId = plan.friShiftTemplateId;
+        start = plan.friStartMinute;
+        end = plan.friEndMinute;
+        break;
+      case 6:
+        dayTplId = plan.satShiftTemplateId;
+        start = plan.satStartMinute;
+        end = plan.satEndMinute;
+        break;
+      case 7:
+        dayTplId = plan.sunShiftTemplateId;
+        start = plan.sunStartMinute;
+        end = plan.sunEndMinute;
+        break;
+    }
+
+    // 1) Day template override
+    if (dayTplId) {
+      const tpl = await getShiftTemplateById(args.companyId, dayTplId);
+      if (tpl) {
+        if (isOffShiftTemplate(tpl)) {
+          return buildOffResolvedShift("DAY_TEMPLATE", tpl);
+        }
+
+        return {
+          source: "DAY_TEMPLATE",
+          shiftCode: (tpl as any).shiftCode ?? tpl.signature,
+          shiftTemplateId: tpl.id,
+          signature: {
+            startTime: tpl.startTime,
+            endTime: tpl.endTime,
+            spansMidnight: tpl.spansMidnight,
+            signature: tpl.signature,
+          },
+        };
+      }
+    }
+
+    // 2) Day custom minutes (legacy/custom)
+    const hasMinutes = start != null && end != null;
+    if (hasMinutes) {
+      const sig = buildShiftSignature(minuteToTime(start as number), minuteToTime(end as number));
+      return { source: "CUSTOM", shiftCode: null, shiftTemplateId: null, signature: sig };
+    }
+
+    // 3) Week default template
+    if ((plan as any).shiftTemplateId) {
+      const tpl = await getShiftTemplateById(args.companyId, String((plan as any).shiftTemplateId));
+      if (tpl) {
+        if (isOffShiftTemplate(tpl)) {
+          return buildOffResolvedShift("WEEK_TEMPLATE", tpl);
+        }
+
+        return {
+          source: "WEEK_TEMPLATE",
+          shiftCode: (tpl as any).shiftCode ?? tpl.signature,
+          shiftTemplateId: tpl.id,
+          signature: {
+            startTime: tpl.startTime,
+            endTime: tpl.endTime,
+            spansMidnight: tpl.spansMidnight,
+            signature: tpl.signature,
+          },
+        };
+      }
+    }
+  }
+
+  // 4) Period Work Schedule fallback
+  const ws =
+    args.workSchedule !== undefined
+      ? args.workSchedule
+      : await resolveWorkScheduleShiftForEmployeeOnDate({
+          companyId: args.companyId,
+          employeeId: empId,
+          dayKey,
+          timezone: tz,
+        });
+  if (ws) {
+    if (ws.kind === "OFF") {
+      return {
+        source: "WORK_SCHEDULE",
+        shiftCode: null,
+        shiftTemplateId: null,
+        isOffDay: true,
+        signature: { startTime: "--:--", endTime: "--:--", spansMidnight: false, signature: "OFF" },
+      };
+    }
+    return {
+      source: "WORK_SCHEDULE",
+      shiftCode: ws.shiftCode ?? null,
+      shiftTemplateId: ws.shiftTemplateId,
+      isOffDay: false,
+      signature: ws.signature,
+    };
+  }
+
+  // 5) Policy fallback (company policy)
+  const startMin = (args.policy as any).shiftStartMinute;
+  const endMin = (args.policy as any).shiftEndMinute;
+  if (typeof startMin === "number" && typeof endMin === "number") {
+    const sig = buildShiftSignature(minuteToTime(startMin), minuteToTime(endMin));
+    return { source: "POLICY", shiftCode: null, shiftTemplateId: null, signature: sig };
+  }
+
+  return {
+    source: "POLICY",
+    shiftCode: null,
+    shiftTemplateId: null,
+    signature: { startTime: "--:--", endTime: "--:--", spansMidnight: false, signature: "Policy" },
+  };
+}
+
+/**
+ * Cached weekly-plan version of resolveShiftMinutesForEmployeeOnDate.
+ * Used by recompute paths only; keeps existing behavior.
+ */
+export async function resolveShiftMinutesForEmployeeOnDateWithWeeklyPlan(args: {
+  companyId: string;
+  employeeId: string;
+  date: string;
+  timezone: string;
+  policy: any;
+  weeklyPlan: WeeklyShiftPlanRow;
+  workSchedule?: WorkScheduleResolved | null;
+}): Promise<ResolvedShiftMinutes> {
+  const r = await resolveShiftForEmployeeOnDateUsingWeeklyPlan({
+    companyId: args.companyId,
+    employeeId: args.employeeId,
+    dayKey: args.date,
+    timezone: args.timezone,
+    policy: args.policy,
+    weeklyPlan: args.weeklyPlan,
+    workSchedule: args.workSchedule,
+  });
+
+  const st = r.signature.startTime;
+  const et = r.signature.endTime;
+
+  if (st === "--:--" || et === "--:--") {
+    return {
+      source: r.source,
+      signature: r.signature.signature,
+      spansMidnight: r.signature.spansMidnight,
+      shiftCode: r.shiftCode ?? null,
+      shiftTemplateId: r.shiftTemplateId ?? null,
+      isOffDay: !!(r as any).isOffDay,
+      startMinute: undefined,
+      endMinute: undefined,
+    };
+  }
+
+  return {
+    source: r.source,
+    signature: r.signature.signature,
+    spansMidnight: r.signature.spansMidnight,
+    shiftCode: r.shiftCode ?? null,
+    shiftTemplateId: r.shiftTemplateId ?? null,
+    isOffDay: !!(r as any).isOffDay,
+    startMinute: timeToMinute(st),
+    endMinute: timeToMinute(et),
+  };
+}
+
+/**
+ * Cached weekly-plan version of resolveShiftForDayWithFallbackMinutes.
+ * Behavior is intentionally identical to the original function; only plan fetching is removed.
+ */
+export async function resolveShiftForDayWithFallbackMinutesWithWeeklyPlan(args: {
+  companyId: string;
+  employeeId: string;
+  date: string;
+  timezone: string;
+  policy: any;
+  weeklyPlan: WeeklyShiftPlanRow;
+  fallbackStartMinute?: number;
+  fallbackEndMinute?: number;
+}): Promise<ResolvedShiftMinutes> {
+  const r = await resolveShiftMinutesForEmployeeOnDateWithWeeklyPlan({
+    companyId: args.companyId,
+    employeeId: args.employeeId,
+    date: args.date,
+    timezone: args.timezone,
+    policy: args.policy,
+    weeklyPlan: args.weeklyPlan,
+  });
+
+  const s = args.fallbackStartMinute;
+  const e = args.fallbackEndMinute;
+
+  if (r.isOffDay) {
+    if (typeof s === "number" && typeof e === "number") {
+      const spansMidnight = e <= s;
+      return { ...r, spansMidnight, startMinute: s, endMinute: e };
+    }
+    return r;
+  }
+
+  if (typeof r.startMinute === "number" && typeof r.endMinute === "number") {
+    if (r.source !== "POLICY") return r;
+    if (typeof s === "number" && typeof e === "number") {
+      const sig = buildShiftSignature(minuteToTime(s), minuteToTime(e));
+      return {
+        ...r,
+        source: "POLICY",
+        signature: sig.signature,
+        spansMidnight: sig.spansMidnight,
+        startMinute: s,
+        endMinute: e,
+      };
+    }
+    return r;
+  }
+
+  if (typeof s === "number" && typeof e === "number") {
+    const sig = buildShiftSignature(minuteToTime(s), minuteToTime(e));
+    return {
+      source: "POLICY",
+      signature: sig.signature,
+      spansMidnight: sig.spansMidnight,
+      startMinute: s,
+      endMinute: e,
+    };
+  }
+
+  return r;
+}
 
 function isSignatureLike(value: string): boolean {
   // Examples: 0900-1700, 2200-0600+1
@@ -364,7 +745,25 @@ export async function resolveShiftForDayWithFallbackMinutes(args: {
   fallbackEndMinute?: number;
 }): Promise<ResolvedShiftMinutes> {
   const r = await resolveShiftMinutesForEmployeeOnDate(args.employeeId, args.date);
+  return applyFallbackMinutesToResolvedShift({
+    resolved: r,
+    fallbackStartMinute: args.fallbackStartMinute,
+    fallbackEndMinute: args.fallbackEndMinute,
+  });
+}
 
+/**
+ * Pure helper: Apply caller-provided fallback minutes onto an already-resolved shift minutes object.
+ *
+ * This is intentionally extracted so high-throughput flows (recompute) can avoid calling
+ * resolveShiftMinutesForEmployeeOnDate twice (DB-heavy) while keeping behavior identical.
+ */
+export function applyFallbackMinutesToResolvedShift(args: {
+  resolved: ResolvedShiftMinutes;
+  fallbackStartMinute?: number;
+  fallbackEndMinute?: number;
+}): ResolvedShiftMinutes {
+  const r = args.resolved;
   const s = args.fallbackStartMinute;
   const e = args.fallbackEndMinute;
 
@@ -413,6 +812,8 @@ export async function resolveShiftForDayWithFallbackMinutes(args: {
       spansMidnight: sig.spansMidnight,
       startMinute: s,
       endMinute: e,
+      // Keep OFF flag false/undefined explicitly (r.isOffDay already handled above)
+      isOffDay: false,
     };
   }
 
@@ -492,6 +893,14 @@ export async function getShiftTimesForEmployeeOnDate(
   if (dayTplId) {
     const tpl = await getShiftTemplateById(company.id, dayTplId);
     if (tpl) {
+      if (isOffShiftTemplate(tpl)) {
+        return {
+          startMinute: undefined,
+          endMinute: undefined,
+          hasPlan: true,
+        };
+      }
+
       return {
         startMinute: timeToMinute(tpl.startTime),
         endMinute: timeToMinute(tpl.endTime),
@@ -508,6 +917,14 @@ export async function getShiftTimesForEmployeeOnDate(
   if (plan.shiftTemplateId) {
     const tpl = await getShiftTemplateById(company.id, plan.shiftTemplateId);
     if (tpl) {
+      if (isOffShiftTemplate(tpl)) {
+        return {
+          startMinute: undefined,
+          endMinute: undefined,
+          hasPlan: true,
+        };
+      }
+
       return {
         startMinute: timeToMinute(tpl.startTime),
         endMinute: timeToMinute(tpl.endTime),

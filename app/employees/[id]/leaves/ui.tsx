@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import EmployeeDetailSubnav from "../_components/EmployeeDetailSubnav";
+import EmployeeHistoricalModeBanner from "../_components/EmployeeHistoricalModeBanner";
 
 type LeaveItem = {
   id: string;
@@ -173,7 +176,19 @@ function typeTone(t: string): "info" | "warn" | "ok" {
   return "info";
 }
 
+function overlapsDay(item: LeaveItem, dayKey: string): boolean {
+  const from = String(item.dateFrom ?? "").slice(0, 10);
+  const to = String(item.dateTo ?? "").slice(0, 10);
+  const day = String(dayKey ?? "").slice(0, 10);
+  if (!from || !to || !day) return false;
+  return from <= day && day <= to;
+}
+
 export default function LeavesClient({ id }: { id: string }) {
+  const searchParams = useSearchParams();
+  const asOf = String(searchParams.get("asOf") ?? "").trim();
+  const isHistorical = Boolean(asOf);
+
   const [items, setItems] = useState<LeaveItem[]>([]);
   const [from, setFrom] = useState<string>("");
   const [to, setTo] = useState<string>("");
@@ -189,15 +204,38 @@ export default function LeavesClient({ id }: { id: string }) {
   const [creating, setCreating] = useState<boolean>(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const filteredCount = useMemo(() => items.length, [items]);
+  const displayedItems = useMemo(() => {
+    if (!isHistorical) return items;
+    return items.filter((item) => overlapsDay(item, asOf));
+  }, [items, isHistorical, asOf]);
+
+  const filteredCount = useMemo(() => displayedItems.length, [displayedItems]);
+
+  const historyMeta = useMemo(
+    () =>
+      isHistorical
+        ? {
+            dayKey: asOf,
+            todayDayKey: "",
+            isHistorical: true,
+            canEdit: false,
+            mode: "AS_OF" as const,
+            profileSource: "AS_OF_CONTEXT",
+            orgSource: "AS_OF_CONTEXT",
+          }
+        : null,
+    [isHistorical, asOf],
+  );
 
   async function load() {
     setLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams();
-      if (from) params.set("from", from);
-      if (to) params.set("to", to);
+      if (!isHistorical) {
+        if (from) params.set("from", from);
+        if (to) params.set("to", to);
+      }
 
       const res = await fetch(`/api/employees/${id}/leaves?${params.toString()}`, {
         credentials: "include",
@@ -218,7 +256,7 @@ export default function LeavesClient({ id }: { id: string }) {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, isHistorical]);
 
   // Auto-dismiss notice
   useEffect(() => {
@@ -228,6 +266,10 @@ export default function LeavesClient({ id }: { id: string }) {
   }, [notice]);
 
   async function create() {
+    if (isHistorical) {
+      setError("Geçmiş modunda izin ekleme kapalıdır.");
+      return;
+    }
     if (!dateFrom || !dateTo || !type || creating) return;
     setError(null);
     setNotice(null);
@@ -279,6 +321,10 @@ export default function LeavesClient({ id }: { id: string }) {
   }
 
   async function remove(leaveId: string) {
+    if (isHistorical) {
+      setError("Geçmiş modunda izin silme kapalıdır.");
+      return;
+    }
     if (deletingId) return;
     setError(null);
     setNotice(null);
@@ -303,6 +349,19 @@ export default function LeavesClient({ id }: { id: string }) {
 
   return (
     <div className="grid gap-5 max-w-full min-w-0">
+      <EmployeeDetailSubnav id={id} current="leaves" />
+      <EmployeeHistoricalModeBanner history={historyMeta} />
+
+      {isHistorical ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="font-semibold">Geçmiş izin görünümü</div>
+          <div className="mt-1 text-amber-800/90">
+            Bu ekran seçilen <span className="font-medium">as-of</span> tarihindeki izin durumunu read-only olarak gösterir.
+            Geçmiş modunda filtre, ekleme ve silme kapalıdır.
+          </div>
+        </div>
+      ) : null}
+      
       {error ? (
         <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
           <div className="flex items-start justify-between gap-3">
@@ -336,9 +395,13 @@ export default function LeavesClient({ id }: { id: string }) {
         <div className="lg:col-span-5 min-w-0">
           <Card
             title="Filtre"
-            description="Tarih aralığına göre izin kayıtlarını listeleyin"
+            description={
+              isHistorical
+                ? "Geçmiş modunda seçilen tarihte aktif olan izin kayıtları gösterilir"
+                : "Tarih aralığına göre izin kayıtlarını listeleyin"
+            }
             right={
-              <Badge tone={loading ? "warn" : "info"}>
+              <Badge tone={isHistorical ? "warn" : loading ? "warn" : "info"}>
                 {loading ? "Yükleniyor" : `${filteredCount} kayıt`}
               </Badge>
             }
@@ -347,19 +410,34 @@ export default function LeavesClient({ id }: { id: string }) {
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="grid gap-1.5">
                   <Label>Başlangıç</Label>
-                  <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+                  <Input
+                    type="date"
+                    value={isHistorical ? asOf : from}
+                    disabled={isHistorical}
+                    onChange={(e) => setFrom(e.target.value)}
+                  />
                 </label>
                 <label className="grid gap-1.5">
                   <Label>Bitiş</Label>
-                  <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+                  <Input
+                    type="date"
+                    value={isHistorical ? asOf : to}
+                    disabled={isHistorical}
+                    onChange={(e) => setTo(e.target.value)}
+                  />
                 </label>
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <Button variant="secondary" className="w-full sm:w-auto" onClick={load} disabled={loading}>
+                <Button
+                  variant="secondary"
+                  className="w-full sm:w-auto"
+                  onClick={load}
+                  disabled={loading || isHistorical}
+                >
                   {loading ? "Yükleniyor…" : "Filtrele"}
                 </Button>
-                {(from || to) ? (
+                {!isHistorical && (from || to) ? (
                   <Button
                     variant="ghost"
                     className="w-full sm:w-auto"
@@ -379,7 +457,15 @@ export default function LeavesClient({ id }: { id: string }) {
         </div>
 
         <div className="lg:col-span-7 min-w-0">
-          <Card title="İzin Ekle" description="Yeni izin kaydı oluşturun">
+          <Card
+            title="İzin Ekle"
+            description={
+              isHistorical
+                ? "Geçmiş modunda izin oluşturma kapalıdır"
+                : "Yeni izin kaydı oluşturun"
+            }
+            right={isHistorical ? <Badge tone="warn">Read-only</Badge> : null}
+          >
             <div className="grid gap-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="grid gap-1.5">
@@ -387,6 +473,7 @@ export default function LeavesClient({ id }: { id: string }) {
                   <Input
                     type="date"
                     value={dateFrom}
+                    disabled={isHistorical}
                     onChange={(e) => setDateFrom(e.target.value)}
                   />
                 </label>
@@ -395,6 +482,7 @@ export default function LeavesClient({ id }: { id: string }) {
                   <Input
                     type="date"
                     value={dateTo}
+                    disabled={isHistorical}
                     onChange={(e) => setDateTo(e.target.value)}
                   />
                 </label>
@@ -403,7 +491,7 @@ export default function LeavesClient({ id }: { id: string }) {
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="grid gap-1.5">
                   <Label>Tür</Label>
-                  <Select value={type} onChange={(e) => setType(e.target.value)}>
+                  <Select value={type} disabled={isHistorical} onChange={(e) => setType(e.target.value)}>
                     <option value="ANNUAL">ANNUAL</option>
                     <option value="SICK">SICK</option>
                     <option value="EXCUSED">EXCUSED</option>
@@ -412,7 +500,12 @@ export default function LeavesClient({ id }: { id: string }) {
                 </label>
                 <label className="grid gap-1.5">
                   <Label>Not</Label>
-                  <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Opsiyonel" />
+                  <Input
+                    value={note}
+                    disabled={isHistorical}
+                    onChange={(e) => setNote(e.target.value)}
+                    placeholder="Opsiyonel"
+                  />
                 </label>
               </div>
 
@@ -420,9 +513,9 @@ export default function LeavesClient({ id }: { id: string }) {
                 <Button
                   className="w-full sm:w-auto"
                   onClick={create}
-                  disabled={creating || !dateFrom || !dateTo || !type}
+                  disabled={isHistorical || creating || !dateFrom || !dateTo || !type}
                 >
-                  {creating ? "Kaydediliyor…" : "İzin Ekle"}
+                  {isHistorical ? "Geçmiş Modu" : creating ? "Kaydediliyor…" : "İzin Ekle"}
                 </Button>
                 <Button
                   variant="secondary"
@@ -434,7 +527,7 @@ export default function LeavesClient({ id }: { id: string }) {
                     setNote("");
                     setError(null);
                   }}
-                  disabled={creating}
+                  disabled={creating || isHistorical}
                 >
                   Temizle
                 </Button>
@@ -446,9 +539,9 @@ export default function LeavesClient({ id }: { id: string }) {
 
       {/* List */}
       <Card title="İzin Kayıtları" description="Personelin tarih bazlı izinleri">
-        {items.length === 0 ? (
+        {displayedItems.length === 0 ? (
           <div className="rounded-xl border border-dashed border-zinc-200 px-4 py-6 text-center text-sm text-zinc-500">
-            Kayıt yok.
+            {isHistorical ? "Seçilen tarihte aktif izin kaydı yok." : "Kayıt yok."}
           </div>
         ) : (
           <div className="overflow-x-auto max-w-full min-w-0">
@@ -463,7 +556,7 @@ export default function LeavesClient({ id }: { id: string }) {
                 </tr>
               </thead>
               <tbody>
-                {items.map((it) => (
+                {displayedItems.map((it) => (
                   <tr key={it.id} className="text-sm text-zinc-900">
                     <td className="whitespace-nowrap border-b border-zinc-100 py-2 pr-4 text-zinc-800">
                       {it.dateFrom}
@@ -482,9 +575,9 @@ export default function LeavesClient({ id }: { id: string }) {
                         variant="danger"
                         className="h-9 px-3"
                         onClick={() => remove(it.id)}
-                        disabled={deletingId === it.id}
+                        disabled={isHistorical || deletingId === it.id}
                       >
-                        {deletingId === it.id ? "Siliniyor…" : "Sil"}
+                        {isHistorical ? "Geçmiş Modu" : deletingId === it.id ? "Siliniyor…" : "Sil"}
                       </Button>
                     </td>
                   </tr>

@@ -14,7 +14,15 @@ function boolEnv(v: string | undefined) {
 }
 
 export default async function IntegrationSettingsPage() {
-  await requireRole(["SYSTEM_ADMIN"]);
+  try {
+    await requireRole(["SYSTEM_ADMIN"]);
+  } catch (e) {
+    return (
+      <AppShell title="Integration Settings" subtitle="Env tabanlı entegrasyon güvenliği">
+        <div className="p-4 text-sm">Bu sayfaya erişim yetkiniz yok.</div>
+      </AppShell>
+    );
+  }
 
   const apiKey = String(process.env.INTEGRATION_API_KEY ?? "").trim();
   const allowlist = String(process.env.INTEGRATION_IP_ALLOWLIST ?? "").trim();

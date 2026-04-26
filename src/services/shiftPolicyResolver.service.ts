@@ -15,8 +15,6 @@ export type ShiftPolicyResolution =
         code: string;
         name: string;
 
-        shiftStartMinute: number;
-        shiftEndMinute: number;
         breakMinutes: number;
         lateGraceMinutes: number;
         earlyLeaveGraceMinutes: number;
@@ -137,8 +135,6 @@ const policyRuleSetSelect = {
   code: true,
   name: true,
 
-  shiftStartMinute: true,
-  shiftEndMinute: true,
   breakMinutes: true,
   lateGraceMinutes: true,
   earlyLeaveGraceMinutes: true,

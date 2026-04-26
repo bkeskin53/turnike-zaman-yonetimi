@@ -6,7 +6,15 @@ import RequestDetailClient from "./ui";
 export default async function IntegrationRequestPage(props: {
   params: Promise<{ requestId: string }>;
 }) {
-  await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR"]);
+  try {
+    await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR"]);
+  } catch (e) {
+    return (
+      <AppShell title="Integration Request">
+        <div className="p-4 text-sm">Bu sayfaya erişim yetkiniz yok.</div>
+      </AppShell>
+    );
+  }
 
   const { requestId } = await props.params;
   const item = await getIntegrationRequestDetail(requestId);

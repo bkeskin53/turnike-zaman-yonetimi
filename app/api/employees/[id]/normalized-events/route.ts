@@ -9,8 +9,8 @@ import { DateTime } from "luxon";
 // Returns normalized events for a specific employee and date.
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
-    // Ensure ADMIN or HR role
-    await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR"]);
+    // Read-only normalized events: Supervisor can view
+    await requireRole(["SYSTEM_ADMIN", "HR_OPERATOR", "SUPERVISOR"]);
     const { id } = await ctx.params;
     if (!id) {
       return NextResponse.json({ error: "BAD_ID" }, { status: 400 });

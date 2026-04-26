@@ -6,10 +6,15 @@ import {
   deleteShiftPolicyAssignment,
   listShiftPolicyAssignments,
 } from "@/src/services/shiftPolicyAssignment.service";
+import { writeAudit } from "@/src/audit/writeAudit";
+import { AuditAction, AuditTargetType, UserRole } from "@prisma/client";
+import { getActiveCompanyId } from "@/src/services/company.service";
+import { markRecomputeRequired } from "@/src/services/recomputeRequired.service";
+import { RecomputeReason } from "@prisma/client";
 
 export async function GET(req: NextRequest) {
   try {
-    await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN"]);
+    await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN", "HR_OPERATOR", "SUPERVISOR"]);
     const shiftCode = req.nextUrl.searchParams.get("shiftCode");
     const scope = req.nextUrl.searchParams.get("scope");
     const items = await listShiftPolicyAssignments({
@@ -27,7 +32,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: Request) {
   try {
-    await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN"]);
+    const session = await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN"]);
     const body: any = await req.json().catch(() => ({}));
 
     const scope = String(body?.scope ?? "").trim();
@@ -56,6 +61,37 @@ export async function POST(req: Request) {
       priority,
     });
 
+    await writeAudit({
+      req,
+      actorUserId: session.userId,
+      actorRole: session.role as unknown as UserRole,
+      action: AuditAction.SHIFT_ASSIGNMENT_UPDATED,
+      targetType: AuditTargetType.SHIFT_ASSIGNMENT,
+      targetId: (data as any)?.item?.id ?? null,
+      details: {
+        op: "ASSIGN",
+        assignmentId: (data as any)?.item?.id ?? null,
+        scope,
+        shiftCode,
+        ruleSetId,
+        employeeId,
+        employeeGroupId,
+        employeeSubgroupId,
+        branchId,
+        validFromDayKey,
+        validToDayKey,
+        priority: priority ?? null,
+      },
+    });
+
+    const companyId = await getActiveCompanyId();
+    await markRecomputeRequired({
+      companyId,
+      reason: RecomputeReason.SHIFT_ASSIGNMENT_UPDATED,
+      createdByUserId: session.userId,
+      rangeStartDayKey: validFromDayKey,
+      rangeEndDayKey: validToDayKey,
+    });
     return NextResponse.json(data);
   } catch (e: any) {
     const auth = authErrorResponse(e);
@@ -67,11 +103,30 @@ export async function POST(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
-    await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN"]);
+    const session = await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN"]);
     const body: any = await req.json().catch(() => ({}));
     const id = String(body?.id ?? "").trim();
     if (!id) return NextResponse.json({ error: "ID_REQUIRED" }, { status: 400 });
     const data = await deleteShiftPolicyAssignment({ id });
+
+    await writeAudit({
+      req,
+      actorUserId: session.userId,
+      actorRole: session.role as unknown as UserRole,
+      action: AuditAction.SHIFT_ASSIGNMENT_UPDATED,
+      targetType: AuditTargetType.SHIFT_ASSIGNMENT,
+      targetId: id,
+      details: { op: "UNASSIGN", assignmentId: id },
+    });
+
+    const companyId = await getActiveCompanyId();
+    await markRecomputeRequired({
+      companyId,
+      reason: RecomputeReason.SHIFT_ASSIGNMENT_UPDATED,
+      createdByUserId: session.userId,
+      rangeStartDayKey: null,
+      rangeEndDayKey: null,
+    });
     return NextResponse.json(data);
   } catch (e) {
     const auth = authErrorResponse(e);

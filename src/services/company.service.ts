@@ -1,3 +1,4 @@
+import type { AttendanceOwnershipMode, UnscheduledWorkBehavior } from "@prisma/client";
 import { getSetting, upsertSetting } from "@/src/repositories/systemSetting.repo";
 import {
   createCompanyWithDefaultPolicy,
@@ -116,6 +117,12 @@ export async function updateCompanyPolicy(input: {
   maxSingleExitMinutes?: number;
   maxDailyExitMinutes?: number;
   exitExceedAction?: "IGNORE" | "WARN" | "FLAG"
+  attendanceOwnershipMode?: AttendanceOwnershipMode;
+  minimumRestMinutes?: number;
+  ownershipEarlyInMinutes?: number;
+  ownershipLateOutMinutes?: number;
+  ownershipNextShiftLookaheadMinutes?: number;
+  unscheduledWorkBehavior?: UnscheduledWorkBehavior;
   leaveEntryBehavior?: "IGNORE" | "FLAG" | "COUNT_AS_OT";
 }) {
   const companyId = await ensureActiveCompanyId();

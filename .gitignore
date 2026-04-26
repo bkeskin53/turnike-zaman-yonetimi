@@ -45,7 +45,12 @@ next-env.d.ts
 # Local env
 .env
 
+
+# Local / generated artifacts
+*.zip
 node_modules/
-**/node_modules/
+tools/**/node_modules/
 .next/
-**/.next/
+.env
+.env.*
+!.env.example

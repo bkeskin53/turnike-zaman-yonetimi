@@ -1,34 +1,5 @@
 import { prisma } from "@/src/repositories/prisma";
 
-export async function hardDeleteEmployeeRepo(companyId: string, employeeId: string) {
-  return prisma.$transaction(async (tx) => {
-    // 0) Employment periods + HR actions
-    await tx.employeeEmploymentPeriod.deleteMany({ where: { companyId, employeeId } });
-    await tx.employeeAction.deleteMany({ where: { companyId, employeeId } });
-    // 1) Attendance kayıtları
-    await tx.dailyAttendance.deleteMany({
-      where: { companyId, employeeId },
-    });
-
-    // 2) Normalized (RawEvent'e FK varsa önce bunu silmek gerekir)
-    await tx.normalizedEvent.deleteMany({
-      where: { companyId, employeeId },
-    });
-
-    // 3) Raw events
-    await tx.rawEvent.deleteMany({
-      where: { companyId, employeeId },
-    });
-
-    // 4) Employee
-    await tx.employee.deleteMany({
-      where: { id: employeeId, companyId },
-    });
-
-    return { ok: true };
-  });
-}
-
 export type CreateEmployeeInput = {
   employeeCode: string;
   firstName: string;
