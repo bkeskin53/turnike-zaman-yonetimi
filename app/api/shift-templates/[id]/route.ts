@@ -31,6 +31,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
       select: {
         id: true,
         shiftCode: true,
+        name: true,
         signature: true,
         startTime: true,
         endTime: true,
@@ -67,6 +68,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
           "signature",
           "spansMidnight",
           ...(mutationInput.shiftCode !== undefined ? ["shiftCode"] : []),
+          ...(mutationInput.name !== undefined ? ["name"] : []),
         ],
       }),
     });
@@ -105,6 +107,7 @@ export async function DELETE(_: Request, ctx: { params: Promise<{ id: string }> 
       select: {
         id: true,
         shiftCode: true,
+        name: true,
         signature: true,
         startTime: true,
         endTime: true,

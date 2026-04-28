@@ -321,6 +321,7 @@ export async function integrationUpsertShiftTemplates(
           companyId,
           signature,
           shiftCode,
+          name: shiftCode,
           startTime,
           endTime,
           spansMidnight,

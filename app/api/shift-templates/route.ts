@@ -2,8 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/src/auth/guard";
 import { authErrorResponse } from "@/src/utils/api";
 import { getActiveCompanyId } from "@/src/services/company.service";
-import { listShiftTemplates, listAllShiftTemplates, createShiftTemplateForCompany } from "@/src/services/shiftTemplate.service";
-import { writeAudit } from "@/src/audit/writeAudit";
+import {
+  ensureOffShiftTemplateForCompany,
+  listShiftTemplates,
+  listAllShiftTemplates,
+  createShiftTemplateForCompany,
+} from "@/src/services/shiftTemplate.service";import { writeAudit } from "@/src/audit/writeAudit";
 import { AuditAction, AuditTargetType, UserRole } from "@prisma/client";
 import { markRecomputeRequired } from "@/src/services/recomputeRequired.service";
 import { RecomputeReason } from "@prisma/client";
@@ -18,10 +22,34 @@ import {
 export async function GET(req: NextRequest) {
    try {
      // Read-only master data: allow Supervisor to view shift templates
-     await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN", "HR_OPERATOR", "SUPERVISOR"]);
+     const session = await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN", "HR_OPERATOR", "SUPERVISOR"]);
      const companyId = await getActiveCompanyId();
      const includeInactive =
        String(req.nextUrl.searchParams.get("includeInactive") ?? "").trim() === "1";
+
+      const offEnsure = await ensureOffShiftTemplateForCompany(companyId);
+     if (offEnsure.action !== "unchanged" && offEnsure.item) {
+       await writeAudit({
+         req,
+         actorUserId: session.userId,
+         actorRole: session.role as unknown as UserRole,
+         action: AuditAction.SHIFT_TEMPLATE_UPDATED,
+         targetType: AuditTargetType.SHIFT_TEMPLATE,
+         targetId: offEnsure.item.id,
+         details: shiftTemplateAuditDetails(
+           `ENSURE_OFF_${offEnsure.action.toUpperCase()}`,
+           offEnsure.item as any
+         ),
+       });
+
+       await markRecomputeRequired({
+         companyId,
+         reason: RecomputeReason.SHIFT_TEMPLATE_UPDATED,
+         createdByUserId: session.userId,
+         rangeStartDayKey: null,
+         rangeEndDayKey: null,
+       });
+     }
 
      const items = includeInactive
        ? await listAllShiftTemplates(companyId)

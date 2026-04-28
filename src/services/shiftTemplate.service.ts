@@ -15,11 +15,24 @@ import {
   activateShiftTemplate,
   findShiftTemplateById,
   findShiftTemplateBySignature,
+  findAnyOffShiftTemplate,
 } from "@/src/repositories/shiftTemplate.repo";
 import { findActiveBreakPlanById } from "@/src/repositories/breakPlan.repo";
 
+export function normalizeShiftTemplateName(value: unknown): string {
+  return String(value ?? "").trim().replace(/\s+/g, " ");
+}
+
+function assertShiftTemplateName(value: unknown): string {
+  const name = normalizeShiftTemplateName(value);
+  if (!name) throw new Error("SHIFT_TEMPLATE_NAME_REQUIRED");
+  if (name.length > 120) throw new Error("SHIFT_TEMPLATE_NAME_TOO_LONG");
+  return name;
+}
+
 export type ShiftTemplateMutationInput = {
   shiftCode?: string | null;
+  name?: string | null;
   plannedWorkHours?: string | number | null;
   plannedWorkMinutes?: number | null;
   breakPlanId?: string | null;
@@ -137,6 +150,7 @@ export async function findOrCreateShiftTemplate(companyId: string, sig: ShiftSig
   return createShiftTemplate({
     companyId,
     shiftCode: sig.signature,
+    name: sig.signature === "OFF" ? "Çalışılmayan Gün" : sig.signature,
     signature: clock.signature,
     startTime: clock.startTime,
     endTime: clock.endTime,
@@ -144,6 +158,41 @@ export async function findOrCreateShiftTemplate(companyId: string, sig: ShiftSig
     plannedWorkMinutes: clock.plannedWorkMinutes,
     breakPlanId: null,
   });
+}
+
+export type EnsureOffShiftTemplateResult = {
+  item: Awaited<ReturnType<typeof findAnyOffShiftTemplate>>;
+  action: "created" | "activated" | "unchanged";
+};
+
+export async function ensureOffShiftTemplateForCompany(
+  companyId: string
+): Promise<EnsureOffShiftTemplateResult> {
+  const existing = await findAnyOffShiftTemplate(companyId);
+
+  if (existing) {
+    if (existing.isActive) {
+      return { item: existing, action: "unchanged" };
+    }
+
+    await activateShiftTemplate(companyId, existing.id);
+    const activated = await findAnyOffShiftTemplate(companyId);
+    return { item: activated, action: "activated" };
+  }
+
+  await createShiftTemplate({
+    companyId,
+    shiftCode: "OFF",
+    name: "Çalışılmayan Gün",
+    signature: "OFF",
+    startTime: "00:00",
+    endTime: "00:00",
+    spansMidnight: false,
+    plannedWorkMinutes: 0,
+    breakPlanId: null,
+  });
+  const created = await findAnyOffShiftTemplate(companyId);
+  return { item: created, action: "created" };
 }
 
 export async function listShiftTemplates(companyId: string) {
@@ -161,12 +210,14 @@ export async function createShiftTemplateForCompany(
   const explicitShiftCode = cleanShiftCode(input.shiftCode);
   const clock = deriveShiftTemplateClockForMutation(input, explicitShiftCode);
   const shiftCode = explicitShiftCode ?? clock.signature;
+  const name = assertShiftTemplateName(input.name);
   const breakPlan = await resolveBreakPlanForMutation(companyId, input, null);
   assertBreakPlanFitsPlannedWork(clock, breakPlan);
 
   return createShiftTemplate({
     companyId,
     shiftCode,
+    name,
     signature: clock.signature,
     startTime: clock.startTime,
     endTime: clock.endTime,
@@ -189,6 +240,10 @@ export async function updateShiftTemplateForCompany(
     cleanShiftCode(input.shiftCode)
       ? cleanShiftCode(input.shiftCode)
       : (existing as any).shiftCode;
+  const name =
+    input.name !== undefined
+      ? assertShiftTemplateName(input.name)
+      : assertShiftTemplateName((existing as any).name);
   const clock = deriveShiftTemplateClockForMutation(input, shiftCode);
   const breakPlan = await resolveBreakPlanForMutation(
     companyId,
@@ -206,6 +261,7 @@ export async function updateShiftTemplateForCompany(
   return updateShiftTemplate({
     companyId,
     shiftCode,
+    name,
     id,
     signature: clock.signature,
     startTime: clock.startTime,

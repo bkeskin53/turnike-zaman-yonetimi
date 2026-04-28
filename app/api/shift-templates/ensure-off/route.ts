@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { requireRole } from "@/src/auth/guard";
 import { authErrorResponse } from "@/src/utils/api";
 import { getActiveCompanyId } from "@/src/services/company.service";
-import { prisma } from "@/src/repositories/prisma";
 import { writeAudit } from "@/src/audit/writeAudit";
 import { AuditAction, AuditTargetType, UserRole, RecomputeReason } from "@prisma/client";
 import { markRecomputeRequired } from "@/src/services/recomputeRequired.service";
+import { ensureOffShiftTemplateForCompany } from "@/src/services/shiftTemplate.service";
 import {
   shiftTemplateAuditDetails,
   toShiftTemplateDto,
@@ -16,52 +16,36 @@ export async function POST(req: Request) {
     const session = await requireRole(["SYSTEM_ADMIN", "HR_CONFIG_ADMIN", "HR_OPERATOR"]);
     const companyId = await getActiveCompanyId();
 
-    // Already exists? Accept both shiftCode=OFF and signature=OFF for compatibility.
-    const existing = await prisma.shiftTemplate.findFirst({
-      where: {
+    const result = await ensureOffShiftTemplateForCompany(companyId);
+
+    if (result.action !== "unchanged" && result.item) {
+      await writeAudit({
+        req,
+        actorUserId: session.userId,
+        actorRole: session.role as unknown as UserRole,
+        action: AuditAction.SHIFT_TEMPLATE_UPDATED,
+        targetType: AuditTargetType.SHIFT_TEMPLATE,
+        targetId: result.item.id,
+        details: shiftTemplateAuditDetails(
+          `ENSURE_OFF_${result.action.toUpperCase()}`,
+          result.item as any
+        ),
+      });
+
+      // Recompute orchestration v1: safest to flag unknown range
+      await markRecomputeRequired({
         companyId,
-        OR: [
-          { shiftCode: "OFF" },
-          { signature: "OFF" },
-        ],
-      },
-    });
-    if (existing) return NextResponse.json({ item: toShiftTemplateDto(existing as any) });
+        reason: RecomputeReason.SHIFT_TEMPLATE_UPDATED,
+        createdByUserId: session.userId,
+        rangeStartDayKey: null,
+        rangeEndDayKey: null,
+      });
+    }
 
-    // Create OFF template
-    const created = await prisma.shiftTemplate.create({
-      data: {
-        companyId,
-        shiftCode: "OFF",
-        signature: "OFF",
-        startTime: "00:00",
-        endTime: "00:00",
-        spansMidnight: false,
-        plannedWorkMinutes: 0,
-        isActive: true,
-      },
+    return NextResponse.json({
+      item: result.item ? toShiftTemplateDto(result.item as any) : null,
+      ensured: result.action,
     });
-
-    await writeAudit({
-      req,
-      actorUserId: session.userId,
-      actorRole: session.role as unknown as UserRole,
-      action: AuditAction.SHIFT_TEMPLATE_UPDATED,
-      targetType: AuditTargetType.SHIFT_TEMPLATE,
-      targetId: created.id,
-      details: shiftTemplateAuditDetails("ENSURE_OFF", created as any),
-    });
-
-    // Recompute orchestration v1: safest to flag unknown range
-    await markRecomputeRequired({
-      companyId,
-      reason: RecomputeReason.SHIFT_TEMPLATE_UPDATED,
-      createdByUserId: session.userId,
-      rangeStartDayKey: null,
-      rangeEndDayKey: null,
-    });
-
-    return NextResponse.json({ item: toShiftTemplateDto(created as any) });
   } catch (e) {
     const auth = authErrorResponse(e);
     if (auth) return auth;

@@ -8,7 +8,7 @@ export default async function ShiftTemplatesPage() {
   const canWrite = Boolean(s && ROLE_SETS.CONFIG_WRITE.includes(s.role));
   return (
     <AppShell
-      title="Shift Templates"
+      title="Günlük Çalışma Programı"
       subtitle="Vardiya şablonları — kurumsal kod + start/end + signature (+1) ve özel OFF sistem şablonu"
     >
       <ShiftTemplatesClient canWrite={canWrite} />

@@ -1914,6 +1914,9 @@ model ShiftTemplate {
   /// Stable shift identity code (integration-safe). Must NOT change when times change.
   shiftCode String
 
+  /// Customer-facing display name.
+  name String @db.VarChar(120)
+
   /// Human signature (derived from times; can change when times change)
   signature          String
   startTime          String

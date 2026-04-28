@@ -7,6 +7,7 @@ type EmployeeLite = { id: string; employeeCode: string; firstName: string; lastN
 
 type ShiftTemplate = {
   id: string;
+  name?: string | null;
   shiftCode: string;
   signature: string;
   startTime: string;
@@ -53,8 +54,11 @@ type StagedAssignmentDraft = {
 };
 
 function fmtShiftLabel(t: ShiftTemplate) {
+  const name = String(t.name ?? "").trim();
   const sig = t.signature ?? "";
   const code = t.shiftCode ?? "";
+  if (name && code) return `${name} (${code})`;
+  if (name) return name;
   if (code && code !== sig) return `${code} (${sig})`;
   return code || sig || "—";
 }
@@ -242,6 +246,10 @@ const quickShiftSelectClass =
 const dayShiftSelectClass =
   "h-10 w-full max-w-[320px] rounded-xl border border-slate-200 bg-slate-50/90 px-3 text-sm font-medium text-slate-800 shadow-sm outline-none transition hover:border-slate-300 hover:bg-white focus:border-indigo-300 focus:bg-white focus:ring-2 focus:ring-indigo-500/15 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none";
 
+const assignmentControlClass = cx(inputClass, "max-w-[320px]");
+
+const assignmentPersonSearchRowClass =
+  "grid max-w-[390px] gap-2 md:grid-cols-[minmax(0,320px)_auto]";
 
 const cardClass = "rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:p-5";
 
@@ -288,6 +296,7 @@ export default function WorkSchedulesClient({
   const [editDays, setEditDays] = useState<DayCell[]>([]);
   const [dayPlanErrorIndexes, setDayPlanErrorIndexes] = useState<number[]>([]);
   const [dayPlanErrorMessage, setDayPlanErrorMessage] = useState<string>("");
+  const [dayPlanErrorFocusTick, setDayPlanErrorFocusTick] = useState<number>(0);
   const [bulkTemplateId, setBulkTemplateId] = useState<string>("");
 
   const [code, setCode] = useState<string>("");
@@ -295,7 +304,7 @@ export default function WorkSchedulesClient({
   const [cycleLengthDays, setCycleLengthDays] = useState<number>(7);
   const [referenceDayKey, setReferenceDayKey] = useState<string>("1990-01-01");
 
-  const [scope, setScope] = useState<string>("EMPLOYEE_GROUP");
+  const [scope, setScope] = useState<string>("");
   const [employeeGroupId, setEmployeeGroupId] = useState<string>("");
   const [employeeSubgroupId, setEmployeeSubgroupId] = useState<string>("");
   const [branchId, setBranchId] = useState<string>("");
@@ -324,6 +333,7 @@ export default function WorkSchedulesClient({
   const [selectedRouteActionMenuOpen, setSelectedRouteActionMenuOpen] = useState<boolean>(false);
   const [portalReady, setPortalReady] = useState(false);
   const selectedRouteActionMenuRef = useRef<HTMLDivElement | null>(null);
+  const dayPlanErrorRef = useRef<HTMLDivElement | null>(null);
   const previousActivePatternIdRef = useRef<string>("");
   const createdPatternActivationRef = useRef<string>("");
   const stagedAssignmentSequenceRef = useRef<number>(0);
@@ -424,6 +434,24 @@ export default function WorkSchedulesClient({
       document.removeEventListener("keydown", handleEscape);
     };
   }, [selectedRouteActionMenuOpen]);
+
+  useEffect(() => {
+    if (!dayPlanErrorMessage || dayPlanErrorFocusTick <= 0) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      const target = dayPlanErrorRef.current;
+      if (!target) return;
+
+      target.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+        inline: "nearest",
+      });
+      target.focus({ preventScroll: true });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [dayPlanErrorMessage, dayPlanErrorFocusTick]);
 
   useEffect(() => {
     if (scope === "EMPLOYEE_GROUP") {
@@ -729,8 +757,16 @@ export default function WorkSchedulesClient({
     return false;
   }, [activePattern, editDays]);
 
+  const canCopyFirstWeekToAllWeeks = useMemo(() => {
+    if (editDays.length < 7) return false;
+    return editDays.slice(0, 7).every((value) => {
+      if (value === null) return true;
+      return String(value ?? "").trim().length > 0;
+    });
+  }, [editDays]);
+
   const hasAssignmentComposerDraft =
-    scope !== "EMPLOYEE_GROUP" ||
+    !!String(scope ?? "").trim() ||
     priority !== 100 ||
     !!selectedGroupId ||
     !!selectedSubgroupId ||
@@ -768,8 +804,23 @@ export default function WorkSchedulesClient({
     onDirtyStateChange?.(hasWorkspaceDraft);
   }, [hasWorkspaceDraft, onDirtyStateChange]);
 
+  function changeAssignmentScope(nextScope: string) {
+    setScope(nextScope);
+    setEmployeeGroupId("");
+    setEmployeeSubgroupId("");
+    setBranchId("");
+    setEmployeeId("");
+    setSelectedGroupId("");
+    setSelectedSubgroupId("");
+    setSelectedBranchId("");
+    setSelectedEmployeeId("");
+    setEmployees([]);
+    setEmployeeQuery("");
+    setAssignmentDraftError("");
+  }
+
   function resetAssignmentComposer() {
-    setScope("EMPLOYEE_GROUP");
+    setScope("");
     setEmployeeGroupId("");
     setEmployeeSubgroupId("");
     setBranchId("");
@@ -888,6 +939,7 @@ export default function WorkSchedulesClient({
     if (invalidIndexes.length > 0) {
       setDayPlanErrorIndexes(invalidIndexes);
       setDayPlanErrorMessage("OFF olmayan günler için vardiya seçmelisiniz.");
+      setDayPlanErrorFocusTick((value) => value + 1);
       return false;
     }
 
@@ -1680,7 +1732,12 @@ export default function WorkSchedulesClient({
                 <Button
                   variant="secondary"
                   onClick={copyFirstWeekToAllWeeks}
-                  disabled={workspaceSaving || readOnly || editDays.length < 7}
+                  disabled={
+                    workspaceSaving ||
+                    deleteSaving ||
+                    selectedRouteMutationDisabled ||
+                    !canCopyFirstWeekToAllWeeks
+                  }
                 >
                   1. Haftayı Kopyala
                 </Button>
@@ -1689,7 +1746,12 @@ export default function WorkSchedulesClient({
           </div>
           
           {dayPlanErrorMessage ? (
-            <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-sm font-medium text-rose-700">
+            <div
+              ref={dayPlanErrorRef}
+              tabIndex={-1}
+              role="alert"
+              className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-sm font-medium text-rose-700 outline-none focus:ring-4 focus:ring-rose-500/10"
+            >
               {dayPlanErrorMessage}
             </div>
           ) : null}
@@ -1775,7 +1837,7 @@ export default function WorkSchedulesClient({
         <section className={surfaceCardClass}>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <h2 className="text-xl font-semibold tracking-tight text-slate-900">Atamalar — {activePattern.code}</h2>
+              <h2 className="text-xl font-semibold tracking-tight text-slate-900">{activePattern.code} — Atamalar</h2>
               <p className="mt-1 text-sm text-slate-500">Atama ekleme ve silme işlemleri önce taslağa alınır, sonra alttaki tek kaydet alanında uygulanır.</p>
             </div>
             <Button
@@ -1804,11 +1866,12 @@ export default function WorkSchedulesClient({
                 <label className="grid gap-1.5">
                   <FieldLabel>1. Kapsam</FieldLabel>
                   <select
-                    className={inputClass}
+                    className={assignmentControlClass}
                     value={scope}
-                    onChange={(e) => setScope(e.target.value)}
+                    onChange={(e) => changeAssignmentScope(e.target.value)}
                     disabled={saving || loading || deleteSaving || workspaceSaving || selectedRouteMutationDisabled}
                   >
+                    <option value="">Seç…</option>
                     <option value="EMPLOYEE">Personel</option>
                     <option value="EMPLOYEE_GROUP">Personel Grubu</option>
                     <option value="EMPLOYEE_SUBGROUP">Personel Alt Grubu</option>
@@ -1819,9 +1882,9 @@ export default function WorkSchedulesClient({
                 {scope === "EMPLOYEE" ? (
                   <div className="grid gap-2">
                     <FieldLabel>2. Hedef — Personel</FieldLabel>
-                    <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
+                    <div className={assignmentPersonSearchRowClass}>
                       <input
-                        className={inputClass}
+                        className={assignmentControlClass}
                         placeholder="Personel ara"
                         value={employeeQuery}
                         onChange={(e) => setEmployeeQuery(e.target.value)}
@@ -1837,7 +1900,7 @@ export default function WorkSchedulesClient({
                     </div>
                     <div className="grid gap-2">
                       <select
-                        className={inputClass}
+                        className={assignmentControlClass}
                         value={selectedEmployeeId}
                         onChange={(e) => setSelectedEmployeeId(e.target.value)}
                         disabled={saving || loading || employeeLoading || deleteSaving || workspaceSaving || selectedRouteMutationDisabled}
@@ -1860,7 +1923,7 @@ export default function WorkSchedulesClient({
                   <div className="grid gap-1.5">
                     <FieldLabel>2. Hedef — Personel Grubu</FieldLabel>
                     <select
-                      className={inputClass}
+                      className={assignmentControlClass}
                       value={selectedGroupId}
                       onChange={(e) => setSelectedGroupId(e.target.value)}
                     disabled={saving || loading || deleteSaving || workspaceSaving || selectedRouteMutationDisabled}
@@ -1879,7 +1942,7 @@ export default function WorkSchedulesClient({
                   <div className="grid gap-1.5">
                     <FieldLabel>2. Hedef — Personel Alt Grubu</FieldLabel>
                     <select
-                      className={inputClass}
+                      className={assignmentControlClass}
                       value={selectedSubgroupId}
                       onChange={(e) => setSelectedSubgroupId(e.target.value)}
                     disabled={saving || loading || deleteSaving || workspaceSaving || selectedRouteMutationDisabled}
@@ -1899,7 +1962,7 @@ export default function WorkSchedulesClient({
                   <div className="grid gap-1.5">
                     <FieldLabel>2. Hedef — Şube</FieldLabel>
                     <select
-                      className={inputClass}
+                      className={assignmentControlClass}
                       value={selectedBranchId}
                       onChange={(e) => setSelectedBranchId(e.target.value)}
                     disabled={saving || loading || deleteSaving || workspaceSaving || selectedRouteMutationDisabled}

@@ -14,6 +14,7 @@ import type { DataManagementWorkspaceRecordOption } from "@/src/features/data-ma
 
 type ShiftTemplate = {
   id: string;
+  name?: string | null;
   shiftCode?: string;
   signature: string;
   startTime: string;
@@ -192,6 +193,10 @@ function normalizeShiftCode(v: string) {
     .slice(0, 4);
 }
 
+function normalizeShiftNameInput(value: unknown) {
+  return String(value ?? "").trim().replace(/\s+/g, " ").slice(0, 120);
+}
+
 function normalizeTimeHHmm(v: string) {
   // Accept "HH:mm" and "HH:mm:ss" from some browsers, normalize to "HH:mm"
   // Also trims whitespace.
@@ -258,6 +263,8 @@ function getShiftPlannedWorkMinutes(it: Partial<ShiftTemplate> | null | undefine
 }
 
 function humanizeShiftTemplateError(code: string) {
+  if (code === "SHIFT_TEMPLATE_NAME_REQUIRED") return "Vardiya adı zorunludur.";
+  if (code === "SHIFT_TEMPLATE_NAME_TOO_LONG") return "Vardiya adı 120 karakteri aşamaz.";
   if (code === "PLANNED_WORK_HOURS_REQUIRED") return "Planlanan çalışma saati zorunludur.";
   if (code === "PLANNED_WORK_HOURS_INVALID_FORMAT") {
     return "Planlanan çalışma saati ondalık formatta olmalıdır. Örn: 9,00 / 7,50 / 8,25.";
@@ -286,6 +293,60 @@ function isOffTemplate(t: Partial<ShiftTemplate> | null | undefined): boolean {
   const code = String((t as any)?.shiftCode ?? "").trim().toUpperCase();
   const sig = String((t as any)?.signature ?? "").trim().toUpperCase();
   return code === "OFF" || sig === "OFF";
+}
+
+function resolveCreatedShiftTemplateId(payload: any): string {
+  const candidates = [
+    payload?.item?.id,
+    payload?.data?.id,
+    payload?.shiftTemplate?.id,
+    payload?.template?.id,
+    payload?.id,
+  ];
+
+  for (const candidate of candidates) {
+    const value = String(candidate ?? "").trim();
+    if (value) return value;
+  }
+
+  return "";
+}
+
+function findCreatedShiftTemplateId(
+  items: ShiftTemplate[],
+  draft: {
+    shiftCode: string;
+    signature: string;
+    startTime: string;
+    plannedWorkMinutes: number | null;
+    breakPlanId: string | null;
+  }
+): string {
+  const draftCode = normalizeShiftCode(draft.shiftCode);
+  const draftSignature = String(draft.signature ?? "").trim();
+
+  const match = items
+    .slice()
+    .reverse()
+    .find((item) => {
+      const itemCode = normalizeShiftCode(item.shiftCode ?? item.signature ?? "");
+      const itemSignature = String(item.signature ?? "").trim();
+      const itemPlannedWorkMinutes = getShiftPlannedWorkMinutes(item);
+      const itemBreakPlanId = item.breakPlanId ?? null;
+
+      const codeMatches = draftCode ? itemCode === draftCode : itemSignature === draftSignature;
+      const plannedMatches =
+        draft.plannedWorkMinutes == null || itemPlannedWorkMinutes === draft.plannedWorkMinutes;
+
+      return (
+        codeMatches &&
+        plannedMatches &&
+        item.startTime === draft.startTime &&
+        itemBreakPlanId === draft.breakPlanId
+      );
+    });
+
+  return String(match?.id ?? "").trim();
 }
 
 export default function ShiftTemplatesClient({
@@ -319,18 +380,19 @@ export default function ShiftTemplatesClient({
   const [editBaseline, setEditBaseline] = useState<{
     id: string;
     shiftCode: string;
+    name: string;
     startTime: string;
     plannedWorkMinutes: number;
     breakPlanId: string | null;
   } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [q, setQ] = useState("");
-  const [ensuringOff, setEnsuringOff] = useState(false);
   const [sort, setSort] = useState<"signature" | "startTime" | "createdAt">("signature");
 
   const [form, setForm] = useState({
     id: "",
     shiftCode: "",
+    name: "",
     plannedWorkHours: "",
     startTime: "",
     breakPlanId: "",
@@ -403,18 +465,24 @@ export default function ShiftTemplatesClient({
   }, [preview, selectedBreakPlan]);
 
   const canSubmit = useMemo(() => {
-    return !!preview && !preview.invalidReason && !expectedPreview?.invalidReason;
-  }, [preview, expectedPreview]);
+    return (
+      normalizeShiftNameInput(form.name).length > 0 &&
+      !!preview &&
+      !preview.invalidReason &&
+      !expectedPreview?.invalidReason
+    );
+  }, [form.name, preview, expectedPreview]);
 
   const hasCreateDraft = useMemo(() => {
     if (form.mode !== "create") return false;
     return (
       !!normalizeShiftCode(form.shiftCode) ||
+      !!normalizeShiftNameInput(form.name) ||
       !!form.plannedWorkHours ||
       !!form.startTime ||
       !!form.breakPlanId
     );
-  }, [form.mode, form.shiftCode, form.plannedWorkHours, form.startTime, form.breakPlanId]);
+  }, [form.mode, form.shiftCode, form.name, form.plannedWorkHours, form.startTime, form.breakPlanId]);
 
   const isDirty = useMemo(() => {
     if (form.mode !== "edit") return false;
@@ -424,11 +492,12 @@ export default function ShiftTemplatesClient({
     const currentPlannedMinutes = preview && !preview.invalidReason ? preview.plannedWorkMinutes : null;
     return (
       editBaseline.shiftCode !== normalizeShiftCode(form.shiftCode) ||
+      editBaseline.name !== normalizeShiftNameInput(form.name) ||
       editBaseline.startTime !== currentStartTime ||
       editBaseline.plannedWorkMinutes !== currentPlannedMinutes ||
       editBaseline.breakPlanId !== (form.breakPlanId || null)
     );
-  }, [form.mode, form.id, form.shiftCode, form.startTime, form.breakPlanId, preview, editBaseline]);
+  }, [form.mode, form.id, form.shiftCode, form.name, form.startTime, form.breakPlanId, preview, editBaseline]);
 
   const hasWorkspaceDraft = form.mode === "edit" ? isDirty : hasCreateDraft;
   
@@ -459,7 +528,7 @@ export default function ShiftTemplatesClient({
       list = items.filter((it) => {
         const plannedText = it.plannedWorkHoursText ?? formatPlannedWorkHoursText(getShiftPlannedWorkMinutes(it));
         const humanText = it.plannedWorkHumanText ?? formatPlannedWorkHumanText(getShiftPlannedWorkMinutes(it));
-        const hay = `${it.shiftCode ?? ""} ${it.signature} ${it.startTime} ${it.endTime} ${plannedText} ${humanText} ${it.breakPlan?.code ?? ""} ${it.breakPlan?.name ?? ""}`.toLowerCase();
+        const hay = `${it.shiftCode ?? ""} ${it.name ?? ""} ${it.signature} ${it.startTime} ${it.endTime} ${plannedText} ${humanText} ${it.breakPlan?.code ?? ""} ${it.breakPlan?.name ?? ""}`.toLowerCase();
         return hay.includes(query);
       });
     }
@@ -497,10 +566,6 @@ export default function ShiftTemplatesClient({
     return items.find((item) => item.id === selectedShiftTemplateId) ?? null;
   }, [items, selectedShiftTemplateId]);
 
-  const offTemplate = useMemo(() => {
-    return items.find((it) => isOffTemplate(it)) ?? null;
-  }, [items]);
-
   const editingIsOff = useMemo(() => {
     return isOffTemplate(editingItem);
   }, [editingItem]);
@@ -518,6 +583,7 @@ export default function ShiftTemplatesClient({
 
     return {
       code: item.shiftCode ?? item.signature,
+      name: item.name ?? "",
       plannedHoursText,
       startTime: item.startTime,
       endTime: `${item.endTime}${item.spansMidnight ? " +1" : ""}`,
@@ -537,6 +603,7 @@ export default function ShiftTemplatesClient({
     setForm({
       id: it.id,
       shiftCode: it.shiftCode ?? it.signature,
+      name: it.name ?? "",
       plannedWorkHours: it.plannedWorkHoursText ?? formatPlannedWorkHoursText(getShiftPlannedWorkMinutes(it)),
       startTime: it.startTime,
       breakPlanId: it.breakPlanId ?? "",
@@ -546,13 +613,14 @@ export default function ShiftTemplatesClient({
     setEditBaseline({
       id: it.id,
       shiftCode: it.shiftCode ?? it.signature,
+      name: it.name ?? "",
       startTime: it.startTime,
       plannedWorkMinutes: getShiftPlannedWorkMinutes(it) ?? 0,
       breakPlanId: it.breakPlanId ?? null,
     });
   }
 
-  async function load() {
+  async function load(): Promise<ShiftTemplate[]> {
     setLoading(true);
     setError(null);
     try {
@@ -582,8 +650,10 @@ export default function ShiftTemplatesClient({
 
       setItems(next);
       setBreakPlans(Array.isArray(breakData?.items) ? breakData.items : []);
+      return next;
     } catch (e: any) {
       setError(e?.message || "LOAD_FAILED");
+      return [];
     } finally {
       setLoading(false);
     }
@@ -597,14 +667,12 @@ export default function ShiftTemplatesClient({
     if (!embedded) return;
 
     const options = items.map((item) => {
-      const plannedText = item.plannedWorkHoursText ?? formatPlannedWorkHoursText(getShiftPlannedWorkMinutes(item));
-      const breakText = item.breakPlan
-        ? ` / ${item.breakPlan.name} / ${item.breakPlan.isPaid ? "Ücretli" : "Ücretsiz"}`
-        : "";
+      const code = item.shiftCode ?? item.signature;
+      const name = normalizeShiftNameInput(item.name);
 
       return {
         value: item.id,
-        label: `${item.shiftCode ?? item.signature} — ${plannedText} saat${breakText}${item.isActive ? "" : " / Pasif"}`,
+        label: name ? `${code} — ${name}` : code,
       };
     });
 
@@ -626,6 +694,7 @@ export default function ShiftTemplatesClient({
     setForm({
       id: item.id,
       shiftCode: item.shiftCode ?? item.signature,
+      name: item.name ?? "",
       plannedWorkHours: item.plannedWorkHoursText ?? formatPlannedWorkHoursText(getShiftPlannedWorkMinutes(item)),
       startTime: item.startTime,
       breakPlanId: item.breakPlanId ?? "",
@@ -635,6 +704,7 @@ export default function ShiftTemplatesClient({
     setEditBaseline({
       id: item.id,
       shiftCode: item.shiftCode ?? item.signature,
+      name: item.name ?? "",
       startTime: item.startTime,
       plannedWorkMinutes: getShiftPlannedWorkMinutes(item) ?? 0,
       breakPlanId: item.breakPlanId ?? null,
@@ -652,6 +722,7 @@ export default function ShiftTemplatesClient({
     setForm({
       id: "",
       shiftCode: "",
+      name: "",
       plannedWorkHours: "",
       startTime: "",
       breakPlanId: "",
@@ -662,7 +733,7 @@ export default function ShiftTemplatesClient({
   }, [embedded, embeddedCreateRequested]);
 
   function resetForm() {
-    setForm({ id: "", shiftCode: "", plannedWorkHours: "", startTime: "", breakPlanId: "", mode: "create" });
+    setForm({ id: "", shiftCode: "", name: "", plannedWorkHours: "", startTime: "", breakPlanId: "", mode: "create" });
     setEditBaseline(null);
     setTouched({ plannedWorkHours: false, startTime: false });
   }
@@ -673,6 +744,7 @@ export default function ShiftTemplatesClient({
     setForm({
       id: selectedEmbeddedShiftTemplate.id,
       shiftCode: selectedEmbeddedShiftTemplate.shiftCode ?? selectedEmbeddedShiftTemplate.signature,
+      name: selectedEmbeddedShiftTemplate.name ?? "",
       plannedWorkHours:
         selectedEmbeddedShiftTemplate.plannedWorkHoursText ??
         formatPlannedWorkHoursText(getShiftPlannedWorkMinutes(selectedEmbeddedShiftTemplate)),
@@ -684,6 +756,7 @@ export default function ShiftTemplatesClient({
     setEditBaseline({
       id: selectedEmbeddedShiftTemplate.id,
       shiftCode: selectedEmbeddedShiftTemplate.shiftCode ?? selectedEmbeddedShiftTemplate.signature,
+      name: selectedEmbeddedShiftTemplate.name ?? "",
       startTime: selectedEmbeddedShiftTemplate.startTime,
       plannedWorkMinutes: getShiftPlannedWorkMinutes(selectedEmbeddedShiftTemplate) ?? 0,
       breakPlanId: selectedEmbeddedShiftTemplate.breakPlanId ?? null,
@@ -726,34 +799,6 @@ export default function ShiftTemplatesClient({
     });
   }
 
-  async function ensureOffTemplate() {
-    if (readOnly) return;
-    setEnsuringOff(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const res = await fetch("/api/shift-templates/ensure-off", {
-        method: "POST",
-        credentials: "include",
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        throw new Error(data?.error || "ENSURE_OFF_FAILED");
-      }
-      await load();
-      setNotice("OFF template oluşturuldu. Artık OFF şablonu sistemde hazır.");
-    } catch (e: any) {
-      const code = String(e?.message || "ENSURE_OFF_FAILED");
-      if (code === "ENSURE_OFF_FAILED") {
-        setError("OFF template oluşturulamadı.");
-      } else {
-        setError(code);
-      }
-    } finally {
-      setEnsuringOff(false);
-    }
-  }
-
   async function onSubmit() {
       if (form.mode === "edit" && editingIsOff) {
       setError("OFF template özel sistem şablonudur. Güncelleme desteklenmez.");
@@ -761,6 +806,10 @@ export default function ShiftTemplatesClient({
     }
 
     if (effectiveReadOnly) return;
+    if (!normalizeShiftNameInput(form.name)) {
+      setError("Vardiya adı zorunludur.");
+      return;
+    }
     if (!canSubmit) {
       setError(preview?.invalidReason || expectedPreview?.invalidReason || "Planlanan çalışma saati zorunludur.");
       return;
@@ -776,8 +825,22 @@ export default function ShiftTemplatesClient({
     setLoading(true);
     try {
       const normalizedShiftCode = normalizeShiftCode(form.shiftCode);
+      const isCreateSubmit = form.mode === "create";
+      const createdMatchDraft =
+        isCreateSubmit && preview && !preview.invalidReason
+          ? {
+              shiftCode: normalizedShiftCode,
+              signature: String(preview.signature ?? ""),
+              startTime: String(preview.startTime ?? ""),
+              plannedWorkMinutes:
+                typeof preview.plannedWorkMinutes === "number" ? preview.plannedWorkMinutes : null,
+              breakPlanId: form.breakPlanId || null,
+            }
+          : null;
+
       const body = {
         shiftCode: normalizedShiftCode || undefined,
+        name: normalizeShiftNameInput(form.name),
         plannedWorkHours: normalizePlannedWorkHoursInput(form.plannedWorkHours),
         startTime: form.startTime || undefined,
         breakPlanId: form.breakPlanId || null,
@@ -796,9 +859,17 @@ export default function ShiftTemplatesClient({
             });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "SAVE_FAILED");
-      await load();
+      const nextItems = await load();
+      const createdId = createdMatchDraft
+        ? resolveCreatedShiftTemplateId(data) || findCreatedShiftTemplateId(nextItems, createdMatchDraft)
+        : "";
+
       if (embeddedSelectedRecord && form.mode === "edit") {
         setEmbeddedEditMode(false);
+      } else if (embedded && isCreateSubmit && createdId) {
+        onSelectedShiftTemplateIdChange?.(createdId);
+        setEmbeddedEditMode(false);
+        setEmbeddedActionsOpen(false);
       } else {
         resetForm();
       }
@@ -879,16 +950,6 @@ export default function ShiftTemplatesClient({
   const showHardValidation =
     form.mode === "edit" || touched.plannedWorkHours || touched.startTime;
 
-  const topPanel = (
-    <div className="flex flex-wrap items-center justify-end gap-2">
-      {!offTemplate && !readOnly ? (
-        <Button variant="secondary" onClick={ensureOffTemplate} disabled={ensuringOff || readOnly}>
-          {ensuringOff ? "OFF oluşturuluyor…" : "OFF oluştur"}
-        </Button>
-      ) : null}
-    </div>
-  );
-
   return (
     <div className={cx("relative grid min-w-0 max-w-full overflow-x-clip", embedded ? "gap-4" : "gap-6")}>      {deleteConfirm && (
         <div
@@ -933,53 +994,6 @@ export default function ShiftTemplatesClient({
         </div>
       )}
 
-      {embeddedSelectedRecord ? (
-        <div className="absolute right-6 top-6 z-30">
-          <div className="relative">
-            <Button
-              variant="secondary"
-              onClick={() => setEmbeddedActionsOpen((open) => !open)}
-              disabled={loading}
-              className="min-w-[112px]"
-            >
-              İşlemler
-              <span className="text-[10px] leading-none">{embeddedActionsOpen ? "▲" : "▼"}</span>
-            </Button>
-
-            {embeddedActionsOpen ? (
-              <div className="absolute right-0 z-40 mt-2 w-48 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_22px_55px_rgba(15,23,42,0.16)]">
-                <button
-                  type="button"
-                  className="block w-full px-4 py-3 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
-                  onClick={closeEmbeddedSelectedRecord}
-                >
-                  Kapat
-                </button>
-                <button
-                  type="button"
-                  className="block w-full px-4 py-3 text-left text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  onClick={beginEmbeddedSelectedEdit}
-                  disabled={readOnly || !selectedEmbeddedShiftTemplate || isOffTemplate(selectedEmbeddedShiftTemplate)}
-                >
-                  Düzenle
-                </button>
-                <div className="h-px bg-slate-100" />
-                <button
-                  type="button"
-                  className="block w-full px-4 py-3 text-left text-sm font-medium text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  onClick={requestEmbeddedSelectedDelete}
-                  disabled={readOnly || !selectedEmbeddedShiftTemplate || isOffTemplate(selectedEmbeddedShiftTemplate)}
-                >
-                  Sil
-                </button>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-
-        {!embedded ? topPanel : null}
-
         {readOnly ? (
           <div className="rounded-xl border border-amber-200/80 bg-[linear-gradient(135deg,rgba(254,243,199,0.96),rgba(255,255,255,0.94))] px-3 py-2 text-sm text-amber-900 shadow-[0_10px_24px_rgba(245,158,11,0.06)]">
             İnceleme modu: şablon <b>oluşturamaz</b>, <b>güncelleyemez</b>, <b>pasifleştiremez</b> veya <b>aktifleştiremezsin</b>.
@@ -1007,6 +1021,51 @@ export default function ShiftTemplatesClient({
         )}
 
         <Card tone="neutral" className="p-4 sm:p-5">
+          <div className="relative">
+            {embeddedSelectedRecord ? (
+              <div className="absolute right-0 top-0 z-30">
+                <div className="relative">
+                  <Button
+                    variant="secondary"
+                    onClick={() => setEmbeddedActionsOpen((open) => !open)}
+                    disabled={loading}
+                    className="min-w-[112px]"
+                  >
+                    İşlemler
+                    <span className="text-[10px] leading-none">{embeddedActionsOpen ? "▲" : "▼"}</span>
+                  </Button>
+
+                  {embeddedActionsOpen ? (
+                    <div className="absolute right-0 z-40 mt-2 w-48 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_22px_55px_rgba(15,23,42,0.16)]">
+                      <button
+                        type="button"
+                        className="block w-full px-4 py-3 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
+                        onClick={closeEmbeddedSelectedRecord}
+                      >
+                        Kapat
+                      </button>
+                      <button
+                        type="button"
+                        className="block w-full px-4 py-3 text-left text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={beginEmbeddedSelectedEdit}
+                        disabled={readOnly || !selectedEmbeddedShiftTemplate || isOffTemplate(selectedEmbeddedShiftTemplate)}
+                      >
+                        Düzenle
+                      </button>
+                      <div className="h-px bg-slate-100" />
+                      <button
+                        type="button"
+                        className="block w-full px-4 py-3 text-left text-sm font-medium text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={requestEmbeddedSelectedDelete}
+                        disabled={readOnly || !selectedEmbeddedShiftTemplate || isOffTemplate(selectedEmbeddedShiftTemplate)}
+                      >
+                        Sil
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
           {embeddedReadonlyDetails ? (
             <div className="mx-auto w-full max-w-[760px] rounded-[28px] border border-slate-200/80 bg-white/70 px-6 py-5 text-center shadow-[0_16px_38px_rgba(15,23,42,0.05)]">
               <div className="grid justify-items-center gap-3">
@@ -1014,6 +1073,13 @@ export default function ShiftTemplatesClient({
                   <div className="text-[11px] font-medium uppercase tracking-[0.22em] text-slate-500">Kod</div>
                   <div className="mt-1 font-mono text-sm font-semibold text-slate-950">
                     {embeddedReadonlyDetails.code}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-[11px] font-medium uppercase tracking-[0.22em] text-slate-500">Ad</div>
+                  <div className="mt-1 text-sm font-semibold text-slate-950">
+                    {embeddedReadonlyDetails.name || "—"}
                   </div>
                 </div>
 
@@ -1075,6 +1141,21 @@ export default function ShiftTemplatesClient({
                   placeholder="Örn: S1 / GNDA"
                   disabled={loading || effectiveReadOnly || editingIsOff}
                   maxLength={4}
+                />
+              </label>
+              
+              <label className="grid gap-1.5">
+                <span className="text-sm font-medium text-slate-800">Vardiya Adı</span>
+                <input
+                  type="text"
+                  className={inputClass}
+                  value={form.name}
+                  onChange={(e) =>
+                    setForm((s) => ({ ...s, name: normalizeShiftNameInput(e.target.value) }))
+                  }
+                  placeholder="Örn: Gündüz Mesaisi"
+                  disabled={loading || effectiveReadOnly || editingIsOff}
+                  maxLength={120}
                 />
               </label>
 
@@ -1179,7 +1260,7 @@ export default function ShiftTemplatesClient({
                       (form.mode === "edit" && !isDirty)
                     }
                   >
-                    {form.mode === "create" ? "Template Oluştur" : "Değişiklikleri Kaydet"}
+                    {form.mode === "create" ? "Plan Oluştur" : "Değişiklikleri Kaydet"}
                   </Button>
                 </div>
               ) : null}
@@ -1225,6 +1306,7 @@ export default function ShiftTemplatesClient({
         ) : null}
               </>
           )}
+          </div>
       </Card>
       
       {!embedded ? (

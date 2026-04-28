@@ -135,6 +135,47 @@ function getBreakHumanText(item: Partial<BreakPlan> | null | undefined) {
   return "—";
 }
 
+function resolveCreatedBreakPlanId(payload: any): string {
+  const candidates = [
+    payload?.item?.id,
+    payload?.data?.id,
+    payload?.breakPlan?.id,
+    payload?.plan?.id,
+    payload?.id,
+  ];
+
+  for (const candidate of candidates) {
+    const value = String(candidate ?? "").trim();
+    if (value) return value;
+  }
+
+  return "";
+}
+
+function findCreatedBreakPlanId(
+  items: BreakPlan[],
+  draft: {
+    code: string;
+    name: string;
+    plannedBreakMinutes: number;
+    isPaid: boolean;
+  }
+): string {
+  const match = items
+    .slice()
+    .reverse()
+    .find((item) => {
+      return (
+        normalizeBreakCodeInput(item.code) === draft.code &&
+        normalizeBreakNameInput(item.name) === draft.name &&
+        Number(item.plannedBreakMinutes) === Number(draft.plannedBreakMinutes) &&
+        Boolean(item.isPaid) === Boolean(draft.isPaid)
+      );
+    });
+
+  return String(match?.id ?? "").trim();
+}
+
 export default function BreakPlansClient({
   canWrite,
   embedded = false,
@@ -294,7 +335,7 @@ export default function BreakPlansClient({
     };
   }, [embeddedReadOnlyRecord, selectedEmbeddedBreakPlan]);
 
-  async function load() {
+  async function load(): Promise<BreakPlan[]> {
     setLoading(true);
     setError(null);
     try {
@@ -304,9 +345,12 @@ export default function BreakPlansClient({
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error || "LOAD_FAILED");
-      setItems(Array.isArray(data?.items) ? data.items : []);
+      const nextItems = Array.isArray(data?.items) ? data.items : [];
+      setItems(nextItems);
+      return nextItems;
     } catch (e: any) {
       setError(humanizeBreakPlanError(String(e?.message || "LOAD_FAILED")));
+      return [];
     } finally {
       setLoading(false);
     }
@@ -488,10 +532,24 @@ export default function BreakPlansClient({
     setError(null);
     setNotice(null);
     try {
+      const isCreateSubmit = form.mode === "create";
+      const normalizedCode = normalizeBreakCodeInput(form.code);
+      const normalizedName = normalizeBreakNameInput(form.name);
+      const normalizedBreakHours = normalizeBreakHoursInput(form.plannedBreakHours);
+      const createdMatchDraft =
+        isCreateSubmit && preview && !preview.invalidReason && typeof preview.plannedBreakMinutes === "number"
+          ? {
+              code: normalizedCode,
+              name: normalizedName,
+              plannedBreakMinutes: preview.plannedBreakMinutes,
+              isPaid: Boolean(form.isPaid),
+            }
+          : null;
+
       const body = {
-        code: normalizeBreakCodeInput(form.code),
-        name: normalizeBreakNameInput(form.name),
-        plannedBreakHours: normalizeBreakHoursInput(form.plannedBreakHours),
+        code: normalizedCode,
+        name: normalizedName,
+        plannedBreakHours: normalizedBreakHours,
         isPaid: form.isPaid,
       };
 
@@ -512,13 +570,21 @@ export default function BreakPlansClient({
 
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error || "SAVE_FAILED");
-      await load();
+      const nextItems = await load();
+      const createdId = createdMatchDraft
+        ? resolveCreatedBreakPlanId(data) || findCreatedBreakPlanId(nextItems, createdMatchDraft)
+        : "";
+
       if (embeddedSelectedRecord && form.mode === "edit") {
         setEmbeddedEditMode(false);
+        } else if (embedded && isCreateSubmit && createdId) {
+        onSelectedBreakPlanIdChange?.(createdId);
+        setEmbeddedEditMode(false);
+        setEmbeddedActionsOpen(false);
       } else {
         resetForm();
       }
-      setNotice(form.mode === "create" ? "Mola planı oluşturuldu." : "Mola planı güncellendi.");
+      setNotice(isCreateSubmit ? "Mola planı oluşturuldu." : "Mola planı güncellendi.");
     } catch (e: any) {
       const code = String(e?.message || "SAVE_FAILED");
       if (code === "BREAK_PLAN_CODE_ALREADY_EXISTS") setQ(normalizeBreakCodeInput(form.code));
@@ -670,50 +736,51 @@ export default function BreakPlansClient({
         </div>
       ) : null}
 
-      {embeddedSelectedRecord ? (
-        <div className="absolute right-6 top-6 z-30">
-          <div className="relative">
-            <Button
-              variant="secondary"
-              onClick={() => setEmbeddedActionsOpen((open) => !open)}
-              disabled={loading}
-              className="min-w-[112px]"
-            >
-              İşlemler
-              <span className="text-[10px] leading-none">{embeddedActionsOpen ? "▲" : "▼"}</span>
-            </Button>
+      <div className="relative">
+        {embeddedSelectedRecord ? (
+          <div className="absolute right-0 top-0 z-30">
+            <div className="relative">
+              <Button
+                variant="secondary"
+                onClick={() => setEmbeddedActionsOpen((open) => !open)}
+                disabled={loading}
+                className="min-w-[112px]"
+              >
+                İşlemler
+                <span className="text-[10px] leading-none">{embeddedActionsOpen ? "▲" : "▼"}</span>
+              </Button>
 
-            {embeddedActionsOpen ? (
-              <div className="absolute right-0 z-40 mt-2 w-48 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_22px_55px_rgba(15,23,42,0.16)]">
-                <button
-                  type="button"
-                  className="block w-full px-4 py-3 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
-                  onClick={closeEmbeddedSelectedRecord}
-                >
-                  Kapat
-                </button>
-                <button
-                  type="button"
-                  className="block w-full px-4 py-3 text-left text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  onClick={beginEmbeddedSelectedEdit}
-                  disabled={readOnly || !selectedEmbeddedBreakPlan}
-                >
-                  Düzenle
-                </button>
-                <div className="h-px bg-slate-100" />
-                <button
-                  type="button"
-                  className="block w-full px-4 py-3 text-left text-sm font-medium text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  onClick={requestEmbeddedSelectedDelete}
-                  disabled={readOnly || !selectedEmbeddedBreakPlan}
-                >
-                  Sil
-                </button>
-              </div>
-            ) : null}
+              {embeddedActionsOpen ? (
+                <div className="absolute right-0 z-40 mt-2 w-48 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_22px_55px_rgba(15,23,42,0.16)]">
+                  <button
+                    type="button"
+                    className="block w-full px-4 py-3 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    onClick={closeEmbeddedSelectedRecord}
+                  >
+                    Kapat
+                  </button>
+                  <button
+                    type="button"
+                    className="block w-full px-4 py-3 text-left text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    onClick={beginEmbeddedSelectedEdit}
+                    disabled={readOnly || !selectedEmbeddedBreakPlan}
+                  >
+                    Düzenle
+                  </button>
+                  <div className="h-px bg-slate-100" />
+                  <button
+                    type="button"
+                    className="block w-full px-4 py-3 text-left text-sm font-medium text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    onClick={requestEmbeddedSelectedDelete}
+                    disabled={readOnly || !selectedEmbeddedBreakPlan}
+                  >
+                    Sil
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
-        </div>
-      ) : null}
+        ) : null}
 
         <div
           className={cx(
@@ -909,6 +976,7 @@ export default function BreakPlansClient({
             {notice}
           </div>
         ) : null}
+      </div>
       </div>
 
       {!embedded ? (

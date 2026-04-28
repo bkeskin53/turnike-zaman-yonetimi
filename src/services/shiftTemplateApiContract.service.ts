@@ -48,6 +48,7 @@ export function toShiftTemplateMutationInput(body: any): ShiftTemplateMutationIn
 
   return {
     shiftCode: optionalString(body?.shiftCode),
+    name: optionalString(body?.name),
     plannedWorkHours: plannedWorkHours as string | number | undefined,
     plannedWorkMinutes: optionalNumber(body?.plannedWorkMinutes),
     breakPlanId: optionalNullableId(body?.breakPlanId),
@@ -61,6 +62,7 @@ export function isShiftTemplateMutationValidationError(e: unknown) {
   return (
     msg === "PLANNED_WORK_HOURS_REQUIRED" ||
     msg.startsWith("PLANNED_WORK_") ||
+    msg.startsWith("SHIFT_TEMPLATE_NAME_") ||
     msg.startsWith("SHIFT_START_TIME_") ||
     msg.startsWith("BREAK_PLAN_")
   );
@@ -134,6 +136,7 @@ export function shiftTemplateAuditDetails(
     op,
     shiftTemplateId: item?.id ?? null,
     shiftCode: item?.shiftCode ?? null,
+    name: item?.name ?? null,
     signature: item?.signature ?? null,
     startTime: item?.startTime ?? null,
     endTime: item?.endTime ?? null,

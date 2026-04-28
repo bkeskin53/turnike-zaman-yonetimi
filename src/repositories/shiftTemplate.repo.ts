@@ -29,9 +29,21 @@ export async function findShiftTemplateBySignature(companyId: string, signature:
   });
 }
 
+export async function findAnyOffShiftTemplate(companyId: string) {
+  return prisma.shiftTemplate.findFirst({
+    where: {
+      companyId,
+      OR: [{ shiftCode: "OFF" }, { signature: "OFF" }],
+    },
+    include: { breakPlan: true },
+    orderBy: [{ isActive: "desc" }, { createdAt: "desc" }],
+  });
+}
+
 export async function createShiftTemplate(input: {
   companyId: string;
   shiftCode: string;
+  name: string;
   signature: string;
   startTime: string;
   endTime: string;
@@ -43,6 +55,7 @@ export async function createShiftTemplate(input: {
     data: {
       companyId: input.companyId,
       shiftCode: input.shiftCode,
+      name: input.name,
       signature: input.signature,
       startTime: input.startTime,
       endTime: input.endTime,
@@ -59,6 +72,7 @@ export async function updateShiftTemplate(input: {
   id: string;
   signature: string;
   shiftCode?: string;
+  name?: string;
   startTime: string;
   endTime: string;
   spansMidnight: boolean;
@@ -70,6 +84,7 @@ export async function updateShiftTemplate(input: {
     data: {
       companyId: input.companyId,
       shiftCode: input.shiftCode,
+      ...(input.name !== undefined ? { name: input.name } : {}),
       signature: input.signature,
       startTime: input.startTime,
       endTime: input.endTime,
