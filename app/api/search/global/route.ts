@@ -30,10 +30,20 @@ type PageSearchEntry = {
 };
 
 const ORGANIZATION_PAGE_SEARCH_ENTRY: PageSearchEntry = {
-  title: "Organizasyon",
-  description: "Şube, grup, alt grup ve cihaz tanımlarını açın.",
-  href: "/org",
-  keywords: ["şube", "grup", "alt grup", "cihaz", "organizasyon", "org"],
+  title: "Şirket Yönetimi",
+  description: "Konum grubu ve konum tanımlarını açın.",
+  href: "/company-management",
+  keywords: [
+    "şirket yönetimi",
+    "şirket",
+    "konum",
+    "konum grubu",
+    "lokasyon",
+    "şube",
+    "grup",
+    "organizasyon",
+    "org",
+  ],
 };
 
 function normalizeSearchText(value: string) {
@@ -310,8 +320,8 @@ export async function GET(req: NextRequest) {
       type: "organizationUnit" as const,
       group: "organizationUnits" as const,
       title: branch.name,
-      subtitle: `Şube · ${branch.code}`,
-      href: `/org#branch-${branch.id}`,
+      subtitle: `Konum · ${branch.code}`,
+      href: `/company-management?module=locations#location-${branch.id}`,
     })),
     ...groups.map((group) => ({
       type: "organizationUnit" as const,

@@ -181,6 +181,14 @@ const inputClass =
   "w-full rounded-xl border border-slate-200/80 bg-white/88 px-3 py-2 text-sm text-slate-800 shadow-[0_8px_24px_rgba(15,23,42,0.04)] " +
   "focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-300";
 
+function RequiredMark() {
+  return (
+    <span className="ml-1 text-rose-500" aria-hidden="true">
+      *
+    </span>
+  );
+}
+
 function isValidTimeHHmm(v: string) {
   return /^\d{2}:\d{2}$/.test(v);
 }
@@ -376,6 +384,7 @@ export default function ShiftTemplatesClient({
   const [breakPlans, setBreakPlans] = useState<BreakPlanLite[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [createFormError, setCreateFormError] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; signature: string } | null>(null);
   const [editBaseline, setEditBaseline] = useState<{
     id: string;
@@ -719,6 +728,7 @@ export default function ShiftTemplatesClient({
     setError(null);
     setNotice(null);
     setDeleteConfirm(null);
+    setCreateFormError(null);
     setForm({
       id: "",
       shiftCode: "",
@@ -735,6 +745,7 @@ export default function ShiftTemplatesClient({
   function resetForm() {
     setForm({ id: "", shiftCode: "", name: "", plannedWorkHours: "", startTime: "", breakPlanId: "", mode: "create" });
     setEditBaseline(null);
+    setCreateFormError(null);
     setTouched({ plannedWorkHours: false, startTime: false });
   }
 
@@ -799,6 +810,34 @@ export default function ShiftTemplatesClient({
     });
   }
 
+  function validateCreateForm() {
+    if (!normalizeShiftCode(form.shiftCode)) {
+      return "Vardiya kodu zorunludur.";
+    }
+
+    if (!normalizeShiftNameInput(form.name)) {
+      return "Vardiya adı zorunludur.";
+    }
+
+    if (!String(form.plannedWorkHours ?? "").trim()) {
+      return "Planlanan çalışma saati zorunludur.";
+    }
+
+    if (preview?.invalidReason) {
+      return preview.invalidReason;
+    }
+
+    if (!String(form.startTime ?? "").trim()) {
+      return "Başlangıç saati zorunludur.";
+    }
+
+    if (expectedPreview?.invalidReason) {
+      return expectedPreview.invalidReason;
+    }
+
+    return "";
+  }
+
   async function onSubmit() {
       if (form.mode === "edit" && editingIsOff) {
       setError("OFF template özel sistem şablonudur. Güncelleme desteklenmez.");
@@ -806,6 +845,16 @@ export default function ShiftTemplatesClient({
     }
 
     if (effectiveReadOnly) return;
+
+    if (form.mode === "create") {
+      const validationError = validateCreateForm();
+      if (validationError) {
+        setError(null);
+        setCreateFormError(validationError);
+        return;
+      }
+    }
+
     if (!normalizeShiftNameInput(form.name)) {
       setError("Vardiya adı zorunludur.");
       return;
@@ -820,6 +869,7 @@ export default function ShiftTemplatesClient({
       setError("Güncellenecek bir değişiklik yok.");
       return;
     }
+    setCreateFormError(null);
     setError(null);
     setNotice(null);
     setLoading(true);
@@ -1130,14 +1180,18 @@ export default function ShiftTemplatesClient({
             <>
           <div className="mx-auto w-full max-w-[360px] rounded-[26px] border border-slate-200/80 bg-white/72 px-5 py-5 shadow-[0_16px_38px_rgba(15,23,42,0.06)]">            <div className="grid gap-3">
               <label className="grid gap-1.5">
-                <span className="text-sm font-medium text-slate-800">Vardiya Kodu</span>
+                <span className="text-sm font-medium text-slate-800">
+                  Vardiya Kodu
+                  <RequiredMark />
+                </span>
                 <input
                   type="text"
                   className={inputClass}
                   value={form.shiftCode}
-                  onChange={(e) =>
-                    setForm((s) => ({ ...s, shiftCode: normalizeShiftCode(e.target.value) }))
-                  }
+                  onChange={(e) => {
+                    setCreateFormError(null);
+                    setForm((s) => ({ ...s, shiftCode: normalizeShiftCode(e.target.value) }));
+                  }}
                   placeholder="Örn: S1 / GNDA"
                   disabled={loading || effectiveReadOnly || editingIsOff}
                   maxLength={4}
@@ -1145,14 +1199,18 @@ export default function ShiftTemplatesClient({
               </label>
               
               <label className="grid gap-1.5">
-                <span className="text-sm font-medium text-slate-800">Vardiya Adı</span>
+                <span className="text-sm font-medium text-slate-800">
+                  Vardiya Adı
+                  <RequiredMark />
+                </span>
                 <input
                   type="text"
                   className={inputClass}
                   value={form.name}
-                  onChange={(e) =>
-                    setForm((s) => ({ ...s, name: normalizeShiftNameInput(e.target.value) }))
-                  }
+                  onChange={(e) => {
+                    setCreateFormError(null);
+                    setForm((s) => ({ ...s, name: normalizeShiftNameInput(e.target.value) }));
+                  }}
                   placeholder="Örn: Gündüz Mesaisi"
                   disabled={loading || effectiveReadOnly || editingIsOff}
                   maxLength={120}
@@ -1160,7 +1218,10 @@ export default function ShiftTemplatesClient({
               </label>
 
               <label className="grid gap-1.5">
-                <span className="text-sm font-medium text-slate-800">Planlanan Çalışma Saati</span>
+                <span className="text-sm font-medium text-slate-800">
+                  Planlanan Çalışma Saati
+                  <RequiredMark />
+                </span>
                 <input
                   type="text"
                   inputMode="decimal"
@@ -1168,6 +1229,7 @@ export default function ShiftTemplatesClient({
                   value={form.plannedWorkHours}
                   onChange={(e) => {
                     const next = e.target.value.replace(".", ",");
+                    setCreateFormError(null);
                     setTouched((s) => ({ ...s, plannedWorkHours: true }));
                     setForm((s) => ({
                       ...s,
@@ -1184,13 +1246,17 @@ export default function ShiftTemplatesClient({
               </label>
 
               <label className="grid gap-1.5">
-                <span className="text-sm font-medium text-slate-800">Başlangıç</span>
+                <span className="text-sm font-medium text-slate-800">
+                  Başlangıç
+                  <RequiredMark />
+                </span>
                 <input
                   type="time"
                   className={inputClass}
                   value={form.startTime}
                   onChange={(e) => {
                     setTouched((s) => ({ ...s, startTime: true }));
+                    setCreateFormError(null);
                     setForm((s) => ({ ...s, startTime: normalizeTimeHHmm(e.target.value) }));
                   }}
                   onBlur={() => {
@@ -1215,6 +1281,7 @@ export default function ShiftTemplatesClient({
                       return;
                     }
                     setTouched((s) => ({ ...s, startTime: true }));
+                    setCreateFormError(null);
                     setForm((s) => ({
                       ...s,
                       startTime: deriveShiftStartTimeFromEndTime(nextEndTime, preview.plannedWorkMinutes),
@@ -1229,7 +1296,10 @@ export default function ShiftTemplatesClient({
                 <select
                   className={inputClass}
                   value={form.breakPlanId}
-                  onChange={(e) => setForm((s) => ({ ...s, breakPlanId: e.target.value }))}
+                  onChange={(e) => {
+                    setCreateFormError(null);
+                    setForm((s) => ({ ...s, breakPlanId: e.target.value }));
+                  }}
                   disabled={loading || effectiveReadOnly || editingIsOff}
                 >
                   <option value="">Mola yok</option>
@@ -1240,6 +1310,13 @@ export default function ShiftTemplatesClient({
                   ))}
                 </select>
               </label>
+              
+              {form.mode === "create" && createFormError ? (
+                <div className="text-xs font-semibold text-rose-600">
+                  {createFormError}
+                </div>
+              ) : null}
+
 
               {!embeddedReadOnlyRecord ? (
                 <div className="flex flex-wrap justify-center gap-2 pt-1">
@@ -1255,9 +1332,10 @@ export default function ShiftTemplatesClient({
                       loading ||
                       effectiveReadOnly ||
                       editingIsOff ||
-                      !canSubmit ||
-                      !!preview?.invalidReason ||
-                      (form.mode === "edit" && !isDirty)
+                      (form.mode === "edit" &&
+                        (!canSubmit ||
+                          !!preview?.invalidReason ||
+                          !isDirty))
                     }
                   >
                     {form.mode === "create" ? "Plan Oluştur" : "Değişiklikleri Kaydet"}

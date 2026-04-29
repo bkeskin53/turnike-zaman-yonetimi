@@ -11,6 +11,7 @@ import {
 import {
   isDataManagementDirtyGuardActive,
 } from "@/src/features/data-management/dataManagementDirtyGuard";
+import { isCompanyManagementPathname } from "@/src/features/company-management/companyManagementUrls";
 import DataManagementDirtyExitDialog from "@/src/features/data-management/DataManagementDirtyExitDialog";
 
 type UserRole = "SYSTEM_ADMIN" | "HR_CONFIG_ADMIN" | "HR_OPERATOR" | "SUPERVISOR";
@@ -367,14 +368,17 @@ const nav: NavItem[] = [
     icon: "employees" as const,
     parentHref: "/employees",
   },
-  { href: "/org", label: "Organizasyon", icon: "org" as const },
-  { href: "/org/location-assignments", label: "Toplu Lokasyon Atama", icon: "org" as const, parentHref: "/org" },
-  { href: "/org/branches/policy", label: "Şube Kural Atamaları", icon: "rules" as const, parentHref: "/org" },
   {
     href: "__master-data__",
     label: "Temel Tanımlar",
     icon: "dashboard" as const,
     isNavigable: false,
+  },
+  {
+    href: "/company-management",
+    label: "Şirket Yönetimi",
+    icon: "org" as const,
+    parentHref: "__master-data__",
   },
   {
     href: "/data-management",
@@ -627,6 +631,10 @@ export default function AppShell(props: {
     const navigableNav = nav.filter((n) => n.isNavigable !== false);
     const exact = navigableNav.find((n) => n.href === pathname)?.href;
     if (exact) return exact;
+
+    if (isCompanyManagementPathname(pathname)) {
+      return "/company-management";
+    }
 
     const pref = navigableNav
       .filter((n) => n.href !== "/dashboard")

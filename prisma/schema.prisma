@@ -457,9 +457,10 @@ model Company {
   dailyAttendances       DailyAttendance[]
   dailyAdjustments       DailyAdjustment[]
 
-  branches Branch[]
-  doors    Door[]
-  devices  Device[]
+  locationGroups LocationGroup[]
+  branches       Branch[]
+  doors          Door[]
+  devices        Device[]
 
   deviceInboxEvents         DeviceInboxEvent[]         @relation("CompanyDeviceInboxEvents")
   weeklyShiftPlans          WeeklyShiftPlan[]
@@ -1153,6 +1154,7 @@ model WorkScheduleAssignment {
   @@index([companyId, validTo])
 }
 
+
 /// Company-level policy rule set (policy group / variant).
 /// NOTE: CompanyPolicy remains the legacy/default single-policy record.
 model PolicyRuleSet {
@@ -1720,7 +1722,10 @@ model AttendanceOwnershipAudit {
   @@index([companyId, rawEventId])
 }
 
-model Branch {
+/// Company Management: Konum Grubu
+/// UI adı: Konum Grubu
+/// Company tekil kalır; Konum Grubu, Company ile Branch/Konum arasındaki ara master data'dır.
+model LocationGroup {
   id        String @id @default(cuid())
   companyId String
 
@@ -1731,7 +1736,28 @@ model Branch {
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  branches Branch[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([companyId, isActive])
+}
+
+model Branch {
+  id        String @id @default(cuid())
+  companyId String
+  locationGroupId String?
+
+  code     String  @db.VarChar(50)
+  name     String  @db.VarChar(200)
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
   company                Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  locationGroup          LocationGroup?          @relation(fields: [locationGroupId], references: [id], onDelete: SetNull)
   doors                  Door[]
   devices                Device[]
   employees              Employee[]
@@ -1744,6 +1770,8 @@ model Branch {
 
   @@unique([companyId, code])
   @@index([companyId])
+  @@index([locationGroupId])
+  @@index([companyId, locationGroupId])
 }
 
 model Door {
